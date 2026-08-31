@@ -13,3 +13,4 @@ export * from "./nemesis-templates.js";
 export * from "./scenario.js";
 export * from "./miniflare.js";
 export * from "./regions.js";
+export * from "./runtime-bridges.js";
