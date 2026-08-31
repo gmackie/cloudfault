@@ -131,7 +131,7 @@ export function createR2FaultProxy<T extends R2BucketLike>(bucket: T, options: R
       if (property === "head") return (key: string) => invoke("r2.head", key, false, () => targetObject.head(key));
       if (property === "get") return (key: string, getOptions?: unknown) => invoke("r2.get", key, false, () => targetObject.get(key, getOptions));
       if (property === "put") return (key: string, value: unknown, putOptions?: unknown) => invoke("r2.put", key, true, () => targetObject.put(key, value, putOptions));
-      if (property === "delete") return (keys: string | readonly string[]) => invoke("r2.delete", Array.isArray(keys) ? keys.join(",") : keys, true, () => targetObject.delete(keys));
+      if (property === "delete") return (keys: string | readonly string[]) => invoke("r2.delete", typeof keys === "string" ? keys : [...keys].join(","), true, () => targetObject.delete(keys));
       if (property === "list") return (listOptions?: unknown) => invoke("r2.list", undefined, false, () => targetObject.list(listOptions));
       return Reflect.get(targetObject, property, receiver);
     },
