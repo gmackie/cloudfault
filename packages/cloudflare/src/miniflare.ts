@@ -114,6 +114,102 @@ export async function dispatchQueueScenario<T>(
   return results;
 }
 
+export interface QueueDeliveryAttempt<T = unknown> {
+  round: number;
+  queue: string;
+  messages: readonly MiniflareQueueMessage<T>[];
+  result: MiniflareQueueResult;
+}
+
+export interface QueueLifecycleResult<T = unknown> {
+  attempts: readonly QueueDeliveryAttempt<T>[];
+  acknowledged: readonly MiniflareQueueMessage<T>[];
+  deadLettered: readonly MiniflareQueueMessage<T>[];
+  remaining: readonly MiniflareQueueMessage<T>[];
+  dlqDispatch?: MiniflareQueueResult;
+}
+
+export interface QueueLifecycleOptions<T = unknown> {
+  worker?: string;
+  queue: string;
+  messages: readonly MiniflareQueueMessage<T>[];
+  maxRetries?: number;
+  deadLetterQueue?: string;
+  /** Safety valve for custom consumers returning contradictory retry metadata. */
+  maxRounds?: number;
+}
+
+function retryIds(result: MiniflareQueueResult, messages: readonly MiniflareQueueMessage[]): Set<string> {
+  if (result.retryAll) return new Set(messages.map((message) => message.id));
+  return new Set(result.explicitRetries ?? []);
+}
+
+/**
+ * Drive a real Miniflare Queue consumer until each message is acked or exceeds
+ * its retry budget. The next dispatch receives incremented `attempts`, and
+ * exhausted messages can be dispatched to a configured DLQ consumer.
+ */
+export async function dispatchQueueUntilSettled<T>(
+  miniflare: CloudFaultMiniflare,
+  options: QueueLifecycleOptions<T>,
+): Promise<QueueLifecycleResult<T>> {
+  const worker = await miniflare.getWorker(options.worker);
+  if (!worker.queue) throw new Error("Selected Miniflare Worker does not expose queue() dispatch");
+  const maxRetries = Math.max(0, Math.floor(options.maxRetries ?? 3));
+  const maxRounds = Math.max(1, Math.floor(options.maxRounds ?? maxRetries + 3));
+  let pending = options.messages.map((message) => ({ ...message, attempts: message.attempts ?? 1 }));
+  const attempts: QueueDeliveryAttempt<T>[] = [];
+  const acknowledged: MiniflareQueueMessage<T>[] = [];
+  const deadLettered: MiniflareQueueMessage<T>[] = [];
+
+  for (let round = 1; pending.length && round <= maxRounds; round++) {
+    const current = pending;
+    const payload = current.map((message) => ({
+      id: message.id,
+      timestamp: message.timestamp ?? new Date(),
+      body: message.body,
+      attempts: message.attempts ?? 1,
+    }));
+    const result = await worker.queue(options.queue, payload);
+    attempts.push({ round, queue: options.queue, messages: current.map((message) => ({ ...message })), result });
+    const retry = retryIds(result, current);
+    const explicitAcks = new Set(result.explicitAcks ?? []);
+    const next: MiniflareQueueMessage<T>[] = [];
+
+    for (const message of current) {
+      // Explicit retry always wins. Otherwise an explicit ack, ackAll, or a
+      // successful result with no retry request means the message is settled.
+      if (!retry.has(message.id)) {
+        acknowledged.push({ ...message });
+        continue;
+      }
+      const retriesSoFar = Math.max(0, (message.attempts ?? 1) - 1);
+      if (retriesSoFar >= maxRetries) {
+        deadLettered.push({ ...message });
+        continue;
+      }
+      if (explicitAcks.has(message.id) && !result.retryAll) {
+        acknowledged.push({ ...message });
+        continue;
+      }
+      next.push({ ...message, attempts: (message.attempts ?? 1) + 1 });
+    }
+    pending = next;
+  }
+
+  let dlqDispatch: MiniflareQueueResult | undefined;
+  if (deadLettered.length && options.deadLetterQueue) {
+    dlqDispatch = await worker.queue(options.deadLetterQueue, deadLettered.map((message) => ({
+      id: message.id,
+      timestamp: message.timestamp ?? new Date(),
+      body: message.body,
+      attempts: message.attempts ?? maxRetries + 1,
+    })));
+  }
+
+  return { attempts, acknowledged, deadLettered, remaining: pending, dlqDispatch };
+}
+
 export interface ScheduledScenarioDispatchOptions {
   worker?: string;
   target?: string;
