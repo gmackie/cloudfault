@@ -1,0 +1,22 @@
+{
+  "name": "cloudfault-monorepo",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "clean": "find packages -type d -name dist -prune -exec rm -rf {} + && find packages -name '*.tsbuildinfo' -delete",
+    "build": "npm run clean && tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/fast-check",
+    "test": "npm run build && node --test test/*.test.mjs",
+    "demo": "npm run build && node packages/cli/bin/cloudfault.mjs demo",
+    "inspect:example": "node packages/cli/bin/cloudfault.mjs inspect examples/checkout/wrangler.jsonc"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

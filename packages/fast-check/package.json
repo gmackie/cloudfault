@@ -1,0 +1,20 @@
+{
+  "name": "@cloudfault/fast-check",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "peerDependencies": {
+    "fast-check": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "fast-check": { "optional": true }
+  }
+}

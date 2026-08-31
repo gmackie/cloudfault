@@ -1,0 +1,13 @@
+{
+  "name": "cloudfault",
+  "version": "0.0.1",
+  "type": "module",
+  "bin": {
+    "cloudfault": "bin/cloudfault.mjs"
+  },
+  "dependencies": {
+    "@cloudfault/core": "0.0.1",
+    "@cloudfault/cloudflare": "0.0.1",
+    "@cloudfault/stripe": "0.0.1"
+  }
+}

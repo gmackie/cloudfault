@@ -1,0 +1,23 @@
+{
+  "name": "@cloudfault/cloudflare",
+  "version": "0.0.1",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "dependencies": {
+    "@cloudfault/core": "0.0.1"
+  },
+  "peerDependencies": {
+    "wrangler": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "wrangler": { "optional": true }
+  }
+}
