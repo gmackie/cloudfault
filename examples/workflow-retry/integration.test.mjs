@@ -12,14 +12,18 @@ async function run(perturbations) {
   const server = createTestHarness({ workers: [{ configPath }] });
   await server.listen();
   try {
-    const worker = server.getWorker("cloudfault-workflow-retry");
-    const workflow = await worker.introspectWorkflow("ORDER_FLOW");
+    // The introspector installs Workflow test hooks by reloading Miniflare.
+    // A WorkerHandle acquired before that reload is intentionally invalidated,
+    // so only use the initial handle to create the introspector. Dispatch the
+    // application request through the TestHarness itself after modifiers land.
+    const controllerWorker = server.getWorker("cloudfault-workflow-retry");
+    const workflow = await controllerWorker.introspectWorkflow("ORDER_FLOW");
     try {
       await applyWorkflowScenario(workflow, { perturbations }, {
         target: "ORDER_FLOW",
         disableRetryDelays: true,
       });
-      const response = await worker.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
+      const response = await server.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
       assert.equal(response.status, 200);
       const started = await response.json();
       assert.equal(started.orderId, "812");
