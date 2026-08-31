@@ -20,8 +20,10 @@ test("stable Stripe idempotency key makes the same ambiguous retry safe", async 
   assert.equal(result.state.responseStatus, 200);
   assert.equal(result.state.stableKey, true);
   assert.equal(result.state.response.stableKey, true);
-  assert.equal(result.state.charges, 1);
+  assert.deepEqual(result.state.uniqueObservedIdempotencyKeys, ["order:812:payment"]);
+  assert.equal(result.state.observedIdempotencyKeys.length, 2);
   assert.equal(result.state.stripe.idempotencyKeys.length, 1);
+  assert.equal(result.state.charges, 1);
   assert.ok(result.checks.every((check) => check.valid));
 });
 
