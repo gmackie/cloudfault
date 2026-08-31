@@ -1,0 +1,58 @@
+import assert from "node:assert/strict";
+import path from "node:path";
+import test from "node:test";
+import { fileURLToPath } from "node:url";
+import { createTestHarness } from "wrangler";
+import { applyWorkflowScenario, workflowStepRetry } from "@cloudfault/cloudflare";
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const configPath = path.join(here, "worker", "wrangler.jsonc");
+
+async function run(perturbations) {
+  const server = createTestHarness({ workers: [{ configPath }] });
+  await server.listen();
+  try {
+    const worker = server.getWorker("cloudfault-workflow-retry");
+    const workflow = await worker.introspectWorkflow("ORDER_FLOW");
+    try {
+      await applyWorkflowScenario(workflow, { perturbations }, {
+        target: "ORDER_FLOW",
+        disableRetryDelays: true,
+      });
+      const response = await worker.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
+      assert.equal(response.status, 200);
+      const started = await response.json();
+      assert.equal(started.orderId, "812");
+
+      const instances = await workflow.get();
+      assert.equal(instances.length, 1);
+      const [instance] = instances;
+      await instance.waitForStatus("complete");
+      return await instance.getOutput();
+    } finally {
+      await workflow.dispose();
+    }
+  } finally {
+    await server.close();
+  }
+}
+
+test("real Workflow baseline completes each step on its first attempt", async () => {
+  const output = await run([]);
+  assert.deepEqual(output, {
+    orderId: "812",
+    charged: true,
+    chargeAttempt: 1,
+    fulfilled: true,
+    fulfillmentAttempt: 1,
+  });
+});
+
+test("CloudFault injects a one-time Workflow step failure and the real runtime retries to convergence", async () => {
+  const output = await run([workflowStepRetry("ORDER_FLOW", "charge")]);
+  assert.equal(output.orderId, "812");
+  assert.equal(output.charged, true);
+  assert.equal(output.fulfilled, true);
+  assert.equal(output.chargeAttempt, 2);
+  assert.equal(output.fulfillmentAttempt, 1);
+});
