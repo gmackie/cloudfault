@@ -1,0 +1,13 @@
+{
+  "name": "cloudfault-do-vitest",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-20",
+  "durable_objects": {
+    "bindings": [
+      { "name": "COUNTER", "class_name": "AlarmCounter" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_classes": ["AlarmCounter"] }
+  ]
+}
