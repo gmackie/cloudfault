@@ -18,7 +18,10 @@ test("MSW semantic adapter exposes ambiguous Stripe commit in a real workerd Wor
 test("stable Stripe idempotency key makes the same ambiguous retry safe", async () => {
   const result = await runScenario([ambiguousStripeCreate], { stableKey: true });
   assert.equal(result.state.responseStatus, 200);
+  assert.equal(result.state.stableKey, true);
+  assert.equal(result.state.response.stableKey, true);
   assert.equal(result.state.charges, 1);
+  assert.equal(result.state.stripe.idempotencyKeys.length, 1);
   assert.ok(result.checks.every((check) => check.valid));
 });
 
