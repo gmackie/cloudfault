@@ -10,7 +10,10 @@ export default {
   async queue(batch) {
     if (batch.queue === "events") {
       for (const message of batch.messages) {
-        if (message.body?.poison === true) message.retry();
+        // Use message identity rather than body decoding here: this fixture is
+        // specifically validating Miniflare's ack/retry result metadata and
+        // CloudFault's attempt/DLQ lifecycle, not structured-clone semantics.
+        if (message.id === "poison") message.retry();
         else message.ack();
       }
       return;
