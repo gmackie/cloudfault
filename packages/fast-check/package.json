@@ -1,20 +1,23 @@
 {
   "name": "@cloudfault/fast-check",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "dependencies": {
+    "@cloudfault/core": "0.1.0"
+  },
   "peerDependencies": {
     "fast-check": ">=4"
   },
   "peerDependenciesMeta": {
     "fast-check": { "optional": true }
-  }
+  },
+  "license": "MIT"
 }

@@ -1,31 +1,15 @@
-# Research lineage
+# Research and reference systems
 
-CloudFault intentionally builds on existing ideas instead of presenting its testing model as novel from whole cloth.
+CloudFault's design is informed by several existing systems and research lines:
 
-## Jepsen
+- Jepsen and Elle — distributed histories and consistency checking.
+- Filibuster and Lineage-Driven Fault Injection — systematic dependency fault exploration.
+- FaultWeave — bounded multi-fault exploration and minimal failure diagnosis.
+- Cast — resilience testing with deeper internal assertions rather than HTTP-only oracles.
+- fast-check — property/model-based generation, shrinking, replay, and async scheduling.
+- LocalStack Chaos API — cloud-service-specific local fault injection.
+- Speedscale — captured API traffic, replay, and response-level chaos.
+- Toxiproxy / MockServer / WireMock — transport and HTTP fault primitives.
+- emulate — independently packaged, stateful local provider emulators.
 
-Provides the history/nemesis/checker vocabulary and explicit support for indeterminate outcomes.
-
-## Filibuster
-
-Systematically injects failures into dependency calls discovered during integration tests. Its work on Distributed Execution Indexing is especially relevant for identifying equivalent dynamic calls across reruns.
-
-## Lineage-Driven Fault Injection
-
-Shows why systematic search over meaningful failure combinations can outperform random fault injection.
-
-## FaultWeave
-
-Demonstrates bounded exploration of multi-fault combinations and diagnosis through Minimal Failure Sets. Its 2026 results reinforce the importance of combinations rather than single-fault testing.
-
-## Cast
-
-Demonstrates that checking only top-level API responses misses silent asynchronous inconsistency. CloudFault should support deeper application-defined assertion points and convergence checks.
-
-## fast-check
-
-Provides property-based generation, model-based commands, reproducible seeds, shrinking, and asynchronous scheduler exploration for JavaScript/TypeScript.
-
-## LocalStack / Speedscale / service virtualization tools
-
-Validate demand for local cloud/API degradation testing and provide useful implementation patterns. CloudFault's intended differentiation is semantic operation modeling combined with histories and correctness invariants.
+The intended differentiator is the combination of executable Cloudflare semantics, provider-specific semantic failure models, complete logical histories, application invariants, bounded multi-fault search, and minimized counterexamples.

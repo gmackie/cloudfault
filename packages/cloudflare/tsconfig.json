@@ -3,7 +3,11 @@
   "compilerOptions": {
     "rootDir": "src",
     "outDir": "dist",
-    "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
+    "composite": true
   },
+  "references": [
+    { "path": "../core" },
+    { "path": "../adapter-sdk" }
+  ],
   "include": ["src/**/*.ts"]
 }

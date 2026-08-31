@@ -1,22 +1,31 @@
 {
-  "name": "cloudfault-monorepo",
-  "version": "0.0.1",
+  "name": "cloudfault",
+  "version": "0.1.0",
   "private": true,
+  "description": "Systematic resilience and distributed-correctness testing for Cloudflare Workers and external APIs.",
   "type": "module",
   "workspaces": [
     "packages/*"
   ],
   "scripts": {
     "clean": "find packages -type d -name dist -prune -exec rm -rf {} + && find packages -name '*.tsbuildinfo' -delete",
-    "build": "npm run clean && tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/fast-check",
-    "test": "npm run build && node --test test/*.test.mjs",
+    "build": "npm run clean && tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/adapters packages/fast-check",
+    "test:unit": "node --test test/*.test.mjs",
+    "test:integration": "node --test examples/checkout/integration.test.mjs examples/outbound-stripe/integration.test.mjs",
+    "test": "npm run build && npm run test:unit && npm run test:integration",
     "demo": "npm run build && node packages/cli/bin/cloudfault.mjs demo",
-    "inspect:example": "node packages/cli/bin/cloudfault.mjs inspect examples/checkout/wrangler.jsonc"
+    "inspect": "npm run build && node packages/cli/bin/cloudfault.mjs inspect",
+    "cloudfault": "npm run build && node packages/cli/bin/cloudfault.mjs"
   },
   "devDependencies": {
-    "typescript": "^5.9.2"
+    "@types/node": "^22.0.0",
+    "fast-check": "^4.9.0",
+    "msw": "^2.15.0",
+    "typescript": "^5.9.2",
+    "wrangler": "^4.127.1"
   },
   "engines": {
     "node": ">=20"
-  }
+  },
+  "license": "MIT"
 }

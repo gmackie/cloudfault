@@ -1,20 +1,18 @@
 {
   "name": "@cloudfault/stripe",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
   "dependencies": {
-    "@cloudfault/adapter-sdk": "0.0.1"
+    "@cloudfault/adapter-sdk": "0.1.0",
+    "@cloudfault/core": "0.1.0"
   },
-  "scripts": {
-    "build": "tsc -b"
-  }
+  "license": "MIT"
 }

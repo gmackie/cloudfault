@@ -1,48 +1,108 @@
-import type { EventMeta, HistoryEvent, HistoryEventType } from "./types.js";
+import type {
+  CompletionType,
+  HistoryEvent,
+  OperationRef,
+  OutcomeMetadata,
+  Perturbation,
+} from "./types.js";
+
+export type Clock = () => number;
 
 export class History {
   readonly #events: HistoryEvent[] = [];
-  #sequence = 0;
-  readonly #clock: () => number;
+  readonly #clock: Clock;
+  #seq = 0;
 
-  constructor(clock: () => number = () => Date.now()) {
+  constructor(clock: Clock = () => performance.now()) {
     this.#clock = clock;
   }
 
-  append(event: Omit<HistoryEvent, "sequence" | "time"> & Partial<Pick<HistoryEvent, "time">>): HistoryEvent {
-    const complete: HistoryEvent = {
-      ...event,
-      sequence: this.#sequence++,
-      time: event.time ?? this.#clock(),
-    };
-    this.#events.push(complete);
-    return complete;
+  static from(events: readonly HistoryEvent[], clock: Clock = () => performance.now()): History {
+    const history = new History(clock);
+    for (const event of events) history.append({ ...event, at: event.at });
+    return history;
   }
 
-  invoke(process: string, operation: string, value?: unknown, meta?: EventMeta): HistoryEvent {
-    return this.append({ process, operation, type: "invoke", value, meta });
+  append(event: Omit<HistoryEvent, "seq" | "at"> & { at?: number }): HistoryEvent {
+    const full: HistoryEvent = {
+      ...event,
+      seq: this.#seq++,
+      at: event.at ?? this.#clock(),
+    };
+    this.#events.push(full);
+    return full;
+  }
+
+  invoke(operation: OperationRef, value?: unknown): HistoryEvent {
+    return this.append({
+      type: "invoke",
+      process: operation.process,
+      operation,
+      value,
+    });
   }
 
   complete(
-    process: string,
-    type: Exclude<HistoryEventType, "invoke">,
+    operation: OperationRef,
+    type: CompletionType,
     value?: unknown,
-    meta?: EventMeta,
+    outcome?: OutcomeMetadata,
   ): HistoryEvent {
-    return this.append({ process, type, value, meta });
+    return this.append({
+      type,
+      process: operation.process,
+      operation,
+      value,
+      outcome,
+    });
   }
 
-  events(): readonly HistoryEvent[] {
-    return this.#events;
+  perturb(
+    perturbation: Perturbation,
+    operation?: OperationRef,
+    process: string | number = "nemesis",
+  ): HistoryEvent {
+    const isFault = "phase" in perturbation;
+    return this.append({
+      type: isFault ? "fault" : "semantic",
+      process,
+      operation,
+      value: perturbation,
+      tags: {
+        perturbationId: perturbation.id,
+        target: perturbation.target,
+        kind: perturbation.kind,
+      },
+    });
   }
 
-  toJSON(): HistoryEvent[] {
-    return [...this.#events];
+  checkpoint(name: string, value?: unknown, process: string | number = "cloudfault"): HistoryEvent {
+    return this.append({
+      type: "checkpoint",
+      process,
+      value,
+      tags: { name },
+    });
   }
 
-  toText(): string {
-    return this.#events
-      .map((event) => `${event.sequence.toString().padStart(4, "0")} ${event.process} ${event.type} ${event.operation ?? ""}`.trim())
-      .join("\n");
+  eventsForOperation(operationId: string): readonly HistoryEvent[] {
+    return this.#events.filter((event) => event.operation?.id === operationId);
+  }
+
+  snapshot(): readonly HistoryEvent[] {
+    return this.#events.map((event) => ({
+      ...event,
+      operation: event.operation ? { ...event.operation } : undefined,
+      outcome: event.outcome ? { ...event.outcome } : undefined,
+      tags: event.tags ? { ...event.tags } : undefined,
+    }));
+  }
+
+  toJSON(): readonly HistoryEvent[] {
+    return this.snapshot();
+  }
+
+  get length(): number {
+    return this.#events.length;
   }
 }

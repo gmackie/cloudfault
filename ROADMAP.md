@@ -1,124 +1,92 @@
-# CloudFault Roadmap
+# Roadmap
 
-## V0 — semantic core
+## V0 — core model
 
-- Jepsen-style operation history (`invoke`, `ok`, `fail`, `info`).
-- Separate actual provider outcome from caller observation.
-- Systematic bounded fault-set exploration.
-- Minimal Failure Set reduction.
-- Seeded randomness for reproducible scenarios.
-- Public semantic adapter API and adapter registry.
-- Cloudflare KV eventual-consistency observer model.
-- Queue duplicate delivery and rebatching model.
-- D1 transient failure model.
-- R2 transient capacity failure model.
-- Service-binding failure model.
-- Stripe semantic adapter.
-- Optional fast-check bridge.
-- Wrangler topology inspection.
+- [x] Jepsen-style logical history with indeterminate (`info`) outcomes.
+- [x] Actual-outcome vs caller-observed-outcome metadata.
+- [x] Separate legal semantic variations from degradation faults.
+- [x] Context-relative operation occurrence / execution indexing.
+- [x] Systematic bounded perturbation-combination enumeration.
+- [x] 1-minimal failure-set reduction.
+- [x] Failure artifact schema, reporter, timeline, and replay descriptor.
+- [x] Concurrent logical workload helper.
+- [x] Optional fast-check bridge.
 
-## V0.1 — real Worker execution
+## V0.1 — real Worker vertical slices
 
-- Drive Workers using Cloudflare `createTestHarness()`.
-- Add auxiliary Nemesis Workers through `bindingOverrides`.
-- Add outbound API interception through `@msw/cloudflare`.
-- Build checkout fixture using KV + D1 + Queue + Stripe.
-- Capture all interactions in the CloudFault history.
-- Replay a captured failing scenario.
+- [x] Wrangler `createTestHarness()` wrapper.
+- [x] Auxiliary JSRPC Nemesis Worker templates for service, KV, and Queue producer bindings.
+- [x] Scenario -> Nemesis Worker control-plane translation.
+- [x] MSW outbound semantic adapter runtime.
+- [x] Checkout Worker fixture using KV + D1 + Queue + payment Service Binding.
+- [x] Outbound Stripe Worker fixture using ordinary `fetch()` + MSW.
+- [x] Stateful Stripe backend for commit/outcome ambiguity.
+- [x] CLI `run`, `replay`, `timeline`, `inspect`, `adapters`, `init`, and `demo`.
+- [ ] Keep the workerd integration suite green against current Wrangler in CI.
 
-## V0.2 — execution indexing
+## V0.2 — Cloudflare contract pack
 
-Implement a Workers/JavaScript adaptation of Distributed Execution Indexing so logical dependency calls can be identified across reruns despite:
-
-- loops,
-- concurrency,
-- changing schedules,
-- repeated endpoints,
-- multiple resources using the same provider operation.
-
-Identity should incorporate logical parent operation, provider adapter, semantic operation, resource identity, ancestry, callsite metadata, and context-local ordinal.
+- [x] KV stale positive/negative observer histories and version-lag model.
+- [x] Binding-compatible KV Nemesis Worker with observer/lag controls.
+- [x] Queue duplicate/rebatch semantics.
+- [x] Direct Miniflare Queue scenario dispatch.
+- [x] Scheduled duplicate/delay semantics and direct Miniflare dispatch.
+- [x] D1 transient error primitives and read-replica/session model.
+- [x] R2 transient/capacity failure primitives.
+- [x] Service Binding timeout/unavailability primitives.
+- [x] Durable Object alarm retry/reset semantic primitives.
+- [x] Workflow retry semantic primitives.
+- [ ] Queue consumer retry/ack/DLQ end-to-end fixtures.
+- [ ] Durable Object alarm end-to-end fixture.
+- [ ] Workflow retry end-to-end fixture.
+- [ ] D1 low-level fault injection that preserves the native statement-builder API.
+- [ ] R2 end-to-end degradation shim.
 
 ## V0.3 — systematic search
 
-- baseline interaction discovery,
-- depth-1 semantic/fault exploration,
-- bounded depth-N combination search,
-- result caching,
-- redundancy elimination,
-- Minimal Failure Set diagnosis,
-- semantic variation × provider degradation × workload ordering.
+- [x] Baseline-first execution.
+- [x] Depth-1 through bounded depth-N exploration.
+- [x] Distributed Execution Indexing-inspired operation identity.
+- [x] Fault-set MFS minimization separate from workload shrinking.
+- [ ] Baseline dependency-call discovery that proposes fault points automatically.
+- [ ] Successful-history pruning / LDFI-style search reduction.
+- [ ] Pairwise/covering-array strategy for large fault spaces before full depth-N.
+- [ ] Correlated incident profiles and retry-storm scenarios.
+- [ ] Persist scenario cache/results to avoid repeating known-equivalent executions.
+- [ ] Deeper fast-check model/command integration and shrunk workload witnesses.
 
-Study Filibuster, LDFI, and FaultWeave rather than inventing search algorithms from scratch.
+## V0.4 — adapter ecosystem
 
-## V0.4 — invariants and convergence
+- [x] Generic provider-neutral HTTP semantic runtime.
+- [x] Declarative rules adapter builder.
+- [x] Public plugin contract and dynamic plugin loading.
+- [x] Bundled unofficial catalog of 25 provider adapters.
+- [x] Source import/API-host detector.
+- [x] Stripe stateful backend.
+- [ ] Adapter conformance-test kit.
+- [ ] Explicit adapter maturity metadata (classifier / semantic / stateful / conformance).
+- [ ] Shared webhook delivery model (delay, duplicate, reorder, signature).
+- [ ] Shared streaming interruption model.
+- [ ] Shared OAuth/token-expiry model.
+- [ ] Shared asynchronous-job lifecycle model.
+- [ ] `emulate` bridge for compatible stateful provider implementations.
+- [ ] Provider-specific signed webhook fixtures for the highest-value adapters.
 
-- synchronous invariant checker,
-- state-machine checker,
-- eventually/convergence checker,
-- idempotency checker,
-- assertion points inside asynchronous flows,
-- application-defined privileged state inspection.
+## V0.5 — developer experience
 
-## V1 — Cloudflare semantic packs
+- [x] Wrangler topology discovery.
+- [x] Known SDK/API usage discovery from source.
+- [ ] `cloudfault init` generates suggested fault points from discovered topology.
+- [ ] `cloudfault doctor` validates runtime dependencies and adapter coverage.
+- [ ] GitHub Actions annotations / machine-readable reporter.
+- [ ] HTML history/timeline artifact.
+- [ ] Scenario coverage report: discovered calls vs exercised perturbations.
+- [ ] Agent-assisted invariant and scenario recommendations.
 
-- KV propagation and cached-negative views,
-- Queues at-least-once delivery and batch variation,
-- Durable Object alarms/retries/resets,
-- D1 transient backend failures and replica semantics,
-- R2 failures and object-state transitions,
-- Workflows retries,
-- Cache API,
-- service bindings and RPC.
+## V1
 
-Expose at least two test profiles:
-
-- `cloudflare-contract`: behavior allowed by documented platform semantics.
-- `cloudflare-degraded`: plausible platform/backend degradation.
-
-## V1 — external adapters
-
-First-party-maintained but unofficial semantic adapters, prioritizing integrations with interesting failure behavior:
-
-Stripe, GitHub, OpenAI, Anthropic, Slack, Google APIs, Microsoft Graph, AWS, Twilio, SendGrid, Resend, PayPal, Shopify, Clerk, Auth0, WorkOS, Okta, Supabase, Firebase, MongoDB Atlas, Vercel, Linear, Discord, Cloudinary, Algolia.
-
-Adapters must remain public and independently implementable from day one.
-
-## V2 — provider backends
-
-Support adapters backed by:
-
-- synthetic responses,
-- stateful local emulators,
-- `emulate` service packages,
-- real provider sandbox/test environments through a proxy.
-
-## V2 — generated workloads
-
-- deeper fast-check integration,
-- state-machine commands,
-- workload shrinking,
-- async schedule exploration,
-- separate workload minimization from Minimal Failure Set reduction.
-
-## V3 — incident composition
-
-Move beyond independent fault probabilities:
-
-- correlated storage degradation,
-- provider rate limiting,
-- retry storms,
-- latency incidents,
-- multiple simultaneous provider failures,
-- virtual Cloudflare observers/regions.
-
-## V4 — automatic analysis
-
-Inspect Wrangler configuration, dependency imports, fetch callsites, SDK use, queue consumers, and durable state transitions to recommend:
-
-- relevant semantic adapters,
-- likely ambiguity boundaries,
-- risky retry patterns,
-- likely application invariants,
-- targeted fault combinations.
-
-The agent should reason from executable platform/provider semantics rather than invent generic edge cases.
+- [ ] Simulated region/observer profiles for multi-location consistency testing.
+- [ ] Staging/remote execution backend using the same Scenario/History/Checker model.
+- [ ] Traffic-import bridge for captured production-shaped workloads.
+- [ ] Provider semantics registry with versioned contract evidence.
+- [ ] Coverage-guided/autoresearch-style search over perturbation + workload space.

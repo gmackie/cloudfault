@@ -1,45 +1,36 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  History,
-  exploreFaultSets,
-  fault,
-  SeededRandom,
-} from "../packages/core/dist/index.js";
+import test from "node:test";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
 
-test("History records indeterminate operations as info", () => {
-  const history = new History(() => 100);
-  history.invoke("p1", "charge");
-  history.complete("p1", "info", { timeout: true }, {
-    actualOutcome: "committed",
-    observedOutcome: "indeterminate",
+const root = process.cwd();
+const core = await import(pathToFileURL(path.join(root, "packages/core/dist/index.js")));
+
+test("history represents indeterminate outcomes with info", () => {
+  const history = new core.History(() => 42);
+  const op = { id: "1", name: "charge", process: 1 };
+  history.invoke(op);
+  history.complete(op, "info", undefined, { actual: "committed", observed: "indeterminate" });
+  const events = history.snapshot();
+  assert.equal(events[1].type, "info");
+  assert.equal(events[1].outcome.actual, "committed");
+});
+
+test("bounded search explores multi-point combinations", () => {
+  const f = (id, target) => ({ id, target, kind: id, phase: "before-commit", description: id });
+  const scenarios = core.enumerateScenarios([
+    { id: "a", target: "a", choices: [f("a1", "a")] },
+    { id: "b", target: "b", choices: [f("b1", "b")] },
+  ], { maxDepth: 2 });
+  assert.deepEqual(scenarios.map((x) => x.id), ["a1", "b1", "a1+b1"]);
+});
+
+test("minimal failure set removes irrelevant perturbations", async () => {
+  const p = (id) => ({ id, target: id, kind: id, phase: "before-commit", description: id });
+  const values = [p("stale"), p("timeout"), p("irrelevant")];
+  const result = await core.minimizeFailureSet(values, (candidate) => {
+    const ids = new Set(candidate.map((x) => x.id));
+    return ids.has("stale") && ids.has("timeout");
   });
-  assert.equal(history.events()[1].type, "info");
-  assert.equal(history.events()[1].meta.actualOutcome, "committed");
-});
-
-test("bounded search finds and minimizes a multi-fault failure", async () => {
-  const a = fault("a", "fault A", { category: "semantic" });
-  const b = fault("b", "fault B", { category: "external" });
-  const c = fault("c", "irrelevant fault");
-
-  const result = await exploreFaultSets([a, b, c], async (active) => {
-    const ids = new Set(active.map((item) => item.id));
-    const history = new History();
-    return {
-      history,
-      check: ids.has("a") && ids.has("b")
-        ? { valid: false, invariant: "demo", message: "A+B is invalid" }
-        : { valid: true },
-    };
-  }, { stopOnFirstFailure: true });
-
-  assert.equal(result.firstFailure.faults.length, 2);
-  assert.deepEqual(result.minimalFailureSet.map((item) => item.id), ["a", "b"]);
-});
-
-test("seeded random is replayable", () => {
-  const a = new SeededRandom(42);
-  const b = new SeededRandom(42);
-  assert.deepEqual([a.next(), a.next(), a.next()], [b.next(), b.next(), b.next()]);
+  assert.deepEqual(result.minimal.map((x) => x.id), ["stale", "timeout"]);
 });

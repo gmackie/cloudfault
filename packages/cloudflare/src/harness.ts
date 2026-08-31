@@ -1,49 +1,80 @@
-export interface HarnessOptions {
+export type JsonPrimitive = string | number | boolean | null;
+export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
+
+export interface CloudFaultWorkerConfig {
+  configPath?: string | URL;
+  /** Inline Wrangler config. Kept unknown so CloudFault does not pin Wrangler's config type. */
+  config?: Record<string, unknown>;
+  env?: string;
+  vars?: Record<string, JsonValue>;
+  secrets?: Record<string, string>;
+  /** Test-only service binding overrides: binding name -> Worker name. */
+  bindingOverrides?: Record<string, string>;
+}
+
+export interface CloudFaultHarnessConfig {
+  workers: readonly CloudFaultWorkerConfig[];
   root?: string;
-  wranglerConfig?: string;
-  bindings?: Record<string, unknown>;
+}
+
+export interface WorkerHandle<Env = Record<string, unknown>, Export = unknown> {
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  scheduled?(options?: { scheduledTime?: Date | number; cron?: string }): Promise<{ outcome: "ok" | "canceled" | "exception"; noRetry: boolean }>;
+  getEnv(): Promise<Env>;
+  getExport(): Promise<Export>;
+  applyD1Migrations?(bindingName: string): Promise<void>;
+  getDurableObjectStorage?(classNameOrBindingName: string, options?: Record<string, unknown>): Promise<unknown>;
+  introspectWorkflow?(bindingName: string): Promise<unknown>;
+  introspectWorkflowInstance?(bindingName: string, instanceId: string): Promise<unknown>;
 }
 
 export interface CloudFaultHarness {
-  raw: unknown;
+  listen(): Promise<{ url: URL }>;
+  fetch(input: string | URL | Request, init?: RequestInit): Promise<Response>;
+  getWorker<Env = Record<string, unknown>, Export = unknown>(name?: string): WorkerHandle<Env, Export>;
+  update(options: CloudFaultHarnessConfig | ((current: CloudFaultHarnessConfig) => CloudFaultHarnessConfig)): Promise<void>;
+  reset(): Promise<void>;
+  debug(): void;
   close(): Promise<void>;
 }
 
+async function optionalImport(specifier: string): Promise<unknown> {
+  // Keep wrangler optional for semantic-only consumers of this package.
+  return Function("specifier", "return import(specifier)")(specifier) as Promise<unknown>;
+}
+
 /**
- * Thin lazy bridge around Wrangler's createTestHarness. Wrangler is an optional
- * peer so CloudFault core can be installed without pulling the full runtime.
- *
- * The exact harness APIs are intentionally kept behind `raw` in V0 while the
- * runtime-injection layer is built against current Wrangler releases.
+ * Thin wrapper over Wrangler's official createTestHarness(). CloudFault uses
+ * bindingOverrides to route application bindings through controllable Nemesis
+ * Workers instead of patching production application code.
  */
-export async function createCloudFaultHarness(options: HarnessOptions = {}): Promise<CloudFaultHarness> {
-  let wrangler: Record<string, unknown>;
+export async function createCloudFaultHarness(config: CloudFaultHarnessConfig): Promise<CloudFaultHarness> {
+  let mod: unknown;
   try {
-    wrangler = await import("wrangler") as Record<string, unknown>;
-  } catch {
-    throw new Error(
-      "CloudFault runtime integration requires Wrangler. Install a current Wrangler 4.x release in the project under test.",
-    );
+    mod = await optionalImport("wrangler");
+  } catch (error) {
+    throw new Error("createCloudFaultHarness() requires wrangler >= 4.106.0", { cause: error });
   }
 
-  const create = wrangler.createTestHarness;
-  if (typeof create !== "function") {
-    throw new Error(
-      "The installed Wrangler does not expose createTestHarness(). Upgrade Wrangler before using CloudFault runtime integration.",
-    );
+  const createTestHarness = (mod as { createTestHarness?: (config: unknown) => unknown }).createTestHarness;
+  if (typeof createTestHarness !== "function") {
+    throw new Error("Installed wrangler does not export createTestHarness(); install a current Wrangler release");
   }
 
-  const harness = await (create as (opts: Record<string, unknown>) => Promise<Record<string, unknown>>)({
-    root: options.root,
-    config: options.wranglerConfig,
-    bindingOverrides: options.bindings,
-  });
+  return createTestHarness(config) as CloudFaultHarness;
+}
 
+/** Convenience lifecycle helper for scripts that do not use test-runner hooks. */
+export async function startCloudFaultHarness(config: CloudFaultHarnessConfig): Promise<{
+  harness: CloudFaultHarness;
+  url: URL;
+  close(): Promise<void>;
+}> {
+  const harness = await createCloudFaultHarness(config);
+  const { url } = await harness.listen();
   return {
-    raw: harness,
-    async close() {
-      const dispose = harness.dispose ?? harness.close;
-      if (typeof dispose === "function") await (dispose as () => Promise<void>).call(harness);
-    },
+    harness,
+    url,
+    close: () => harness.close(),
   };
 }

@@ -1,23 +1,34 @@
 {
   "name": "@cloudfault/cloudflare",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "type": "module",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
   },
-  "files": ["dist"],
   "dependencies": {
-    "@cloudfault/core": "0.0.1"
+    "@cloudfault/core": "0.1.0",
+    "@cloudfault/adapter-sdk": "0.1.0"
   },
   "peerDependencies": {
-    "wrangler": ">=4"
+    "wrangler": ">=4.106.0",
+    "msw": ">=2.14.1",
+    "miniflare": ">=3"
   },
   "peerDependenciesMeta": {
-    "wrangler": { "optional": true }
-  }
+    "wrangler": {
+      "optional": true
+    },
+    "msw": {
+      "optional": true
+    },
+    "miniflare": {
+      "optional": true
+    }
+  },
+  "license": "MIT"
 }

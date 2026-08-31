@@ -1,31 +1,32 @@
 import type { Fault } from "@cloudfault/core";
 
-export function serviceBindingTimeout(binding: string, latencyMs?: number): Fault {
+export function serviceTimeout(target: string, operation?: string): Fault {
   return {
-    id: `service:${binding}:timeout`,
-    label: `${binding} service binding times out`,
-    target: `service:${binding}`,
-    category: "degradation",
-    metadata: latencyMs === undefined ? undefined : { latencyMs },
+    id: `${target}:${operation ?? "*"}:timeout`,
+    target,
+    operation,
+    kind: "service-timeout",
+    phase: "during-response",
+    category: "cloudflare",
+    description: `${target}${operation ? ` ${operation}` : ""} becomes indeterminate due to a service timeout`,
+    actualOutcome: "unknown",
+    observedOutcome: "indeterminate",
+    selector: { target, operation },
   };
 }
 
-export function serviceBindingUnavailable(binding: string, status = 503): Fault {
+export function serviceUnavailable(target: string, operation?: string, status = 503): Fault {
   return {
-    id: `service:${binding}:status:${status}`,
-    label: `${binding} service binding returns ${status}`,
-    target: `service:${binding}`,
-    category: "degradation",
+    id: `${target}:${operation ?? "*"}:${status}`,
+    target,
+    operation,
+    kind: "service-unavailable",
+    phase: "before-commit",
+    category: "cloudflare",
+    description: `${target}${operation ? ` ${operation}` : ""} returns ${status}`,
+    actualOutcome: "not-committed",
+    observedOutcome: "definite-failure",
+    selector: { target, operation },
     metadata: { status },
-  };
-}
-
-export function serviceBindingLatency(binding: string, latencyMs: number): Fault {
-  return {
-    id: `service:${binding}:latency:${latencyMs}`,
-    label: `${binding} service binding adds ${latencyMs}ms latency`,
-    target: `service:${binding}`,
-    category: "degradation",
-    metadata: { latencyMs },
   };
 }

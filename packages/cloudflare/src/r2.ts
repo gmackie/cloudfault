@@ -1,14 +1,16 @@
 import type { Fault } from "@cloudfault/core";
 
-export function r2CapacityFault(binding: string): Fault {
+export function r2CapacityError(target = "R2", status = 503): Fault {
   return {
-    id: `r2:${binding}:capacity-5xx`,
-    label: `${binding} returns transient capacity/backend 5xx`,
-    target: `r2:${binding}`,
-    category: "degradation",
-    metadata: {
-      binding,
-      retryability: "backoff-recommended",
-    },
+    id: `${target}:capacity:${status}`,
+    target,
+    kind: "capacity-5xx",
+    phase: "before-commit",
+    category: "cloudflare",
+    description: `${target} returns a transient ${status} under capacity/degradation pressure`,
+    actualOutcome: "not-committed",
+    observedOutcome: "definite-failure",
+    selector: { target },
+    metadata: { status },
   };
 }

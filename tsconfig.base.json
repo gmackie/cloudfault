@@ -7,8 +7,8 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "composite": true,
     "skipLibCheck": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "forceConsistentCasingInFileNames": true
   }
 }

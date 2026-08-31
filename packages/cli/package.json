@@ -1,13 +1,15 @@
 {
-  "name": "cloudfault",
-  "version": "0.0.1",
+  "name": "@cloudfault/cli",
+  "version": "0.1.0",
   "type": "module",
   "bin": {
-    "cloudfault": "bin/cloudfault.mjs"
+    "cloudfault": "./bin/cloudfault.mjs"
   },
   "dependencies": {
-    "@cloudfault/core": "0.0.1",
-    "@cloudfault/cloudflare": "0.0.1",
-    "@cloudfault/stripe": "0.0.1"
-  }
+    "@cloudfault/core": "0.1.0",
+    "@cloudfault/cloudflare": "0.1.0",
+    "@cloudfault/stripe": "0.1.0",
+    "@cloudfault/adapters": "0.1.0"
+  },
+  "license": "MIT"
 }

@@ -1,0 +1,8 @@
+{
+  "name": "cloudfault-payment-nemesis",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-31",
+  "services": [
+    { "binding": "UPSTREAM", "service": "cloudfault-payment-worker" }
+  ]
+}

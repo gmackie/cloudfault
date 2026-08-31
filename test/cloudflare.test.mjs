@@ -1,32 +1,26 @@
-import test from "node:test";
 import assert from "node:assert/strict";
-import {
-  EventuallyConsistentKV,
-  queueDuplicateFault,
-  duplicateMessages,
-  d1DefaultDegradationFaults,
-  r2CapacityFault,
-} from "../packages/cloudflare/dist/index.js";
+import test from "node:test";
+import { pathToFileURL } from "node:url";
+import path from "node:path";
 
-test("eventually consistent KV exposes observer-local versions", () => {
-  const kv = new EventuallyConsistentKV();
-  kv.write("v1");
-  kv.write("v2");
+const cloudflare = await import(pathToFileURL(path.join(process.cwd(), "packages/cloudflare/dist/index.js")));
+
+test("KV observer can legally lag authoritative state", () => {
+  const kv = new cloudflare.EventuallyConsistentKv();
+  kv.write("PENDING", 1);
+  kv.write("PAID", 2);
   kv.setObserverVersion("FRA", 1);
-  kv.converge("DTW");
-  assert.deepEqual(kv.read("FRA"), { version: 1, value: "v1" });
-  assert.deepEqual(kv.read("DTW"), { version: 2, value: "v2" });
+  assert.equal(kv.latest().value, "PAID");
+  assert.equal(kv.read("FRA").visibleValue, "PENDING");
+  kv.converge("FRA");
+  assert.equal(kv.read("FRA").visibleValue, "PAID");
 });
 
-test("queue helper duplicates a logical delivery", () => {
-  const fault = queueDuplicateFault("EVENTS", 2);
-  assert.equal(fault.category, "semantic");
-  assert.deepEqual(duplicateMessages(["a", "b"], 0, 2), ["a", "a", "b"]);
-});
-
-test("backend degradation primitives are separate from legal semantics", () => {
-  const d1 = d1DefaultDegradationFaults("DB");
-  assert.equal(d1.length, 4);
-  assert.ok(d1.every((fault) => fault.category === "degradation"));
-  assert.equal(r2CapacityFault("OBJECTS").category, "degradation");
+test("Cloudflare degradation primitives distinguish definite and indeterminate outcomes", () => {
+  const d1 = cloudflare.d1TransientNetworkError("DB");
+  const service = cloudflare.serviceTimeout("PAYMENTS", "confirm");
+  assert.equal(d1.kind, "transient-network-error");
+  assert.equal(d1.observedOutcome, "definite-failure");
+  assert.equal(service.observedOutcome, "indeterminate");
+  assert.equal(service.actualOutcome, "unknown");
 });

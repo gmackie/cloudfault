@@ -1,36 +1,36 @@
-import type { Fault } from "@cloudfault/core";
+import type { FaultPoint, Perturbation } from "@cloudfault/core";
 
-export interface FastCheckRunOptions {
-  seed?: number;
-  numRuns?: number;
+interface ArbitraryLike<T> {
+  map<U>(mapper: (value: T) => U): ArbitraryLike<U>;
+}
+
+export interface FastCheckLike {
+  constant<T>(value: T): ArbitraryLike<T>;
+  constantFrom<T>(...values: T[]): ArbitraryLike<T>;
+  array<T>(arb: ArbitraryLike<T>, constraints?: { minLength?: number; maxLength?: number }): ArbitraryLike<T[]>;
 }
 
 /**
- * Optional bridge. CloudFault's systematic correctness search does not require
- * fast-check, but generated workloads and shrinking can delegate to it.
+ * Build a fast-check arbitrary without making fast-check a hard dependency of
+ * the rest of CloudFault. Systematic bounded search remains the default mode;
+ * this bridge is intended for workload/data generation and fuzz/soak modes.
  */
-export async function assertGeneratedFaultSets(
-  faults: readonly Fault[],
-  property: (faults: readonly Fault[]) => boolean | Promise<boolean>,
-  options: FastCheckRunOptions = {},
-): Promise<void> {
-  let fc: Record<string, unknown>;
-  try {
-    fc = await import("fast-check") as Record<string, unknown>;
-  } catch {
-    throw new Error("Install fast-check >= 4 to use @cloudfault/fast-check");
+export function perturbationSequenceArbitrary(
+  fc: FastCheckLike,
+  points: readonly FaultPoint[],
+  maxLength = 8,
+): ArbitraryLike<readonly Perturbation[]> {
+  const all = points.flatMap((point) => point.choices);
+  if (all.length === 0) {
+    return fc.constant([] as readonly Perturbation[]);
   }
+  return fc.array(fc.constantFrom(...all), { minLength: 0, maxLength });
+}
 
-  const subarray = fc.subarray as (items: readonly Fault[]) => unknown;
-  const asyncProperty = fc.asyncProperty as (arb: unknown, fn: (value: readonly Fault[]) => Promise<void>) => unknown;
-  const assert = fc.assert as (property: unknown, params?: Record<string, unknown>) => Promise<void>;
-
-  const generated = subarray(faults);
-  const p = asyncProperty(generated, async (active) => {
-    if (!(await property(active))) throw new Error("CloudFault generated scenario violated property");
-  });
-  await assert(p, {
-    seed: options.seed,
-    numRuns: options.numRuns ?? 100,
-  });
+export async function loadFastCheck(): Promise<FastCheckLike> {
+  try {
+    return (await Function("return import('fast-check')")()) as FastCheckLike;
+  } catch (error) {
+    throw new Error("@cloudfault/fast-check requires fast-check >= 4", { cause: error });
+  }
 }

@@ -1,0 +1,24 @@
+{
+  "name": "cloudfault-checkout-app",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-31",
+  "kv_namespaces": [
+    { "binding": "ORDER_STATE", "id": "cloudfault-order-state" }
+  ],
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "cloudfault-orders",
+      "database_id": "cloudfault-orders",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "FULFILLMENT", "queue": "cloudfault-fulfillment" }
+    ]
+  },
+  "services": [
+    { "binding": "PAYMENTS", "service": "cloudfault-payment-worker" }
+  ]
+}

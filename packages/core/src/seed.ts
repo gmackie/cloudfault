@@ -1,4 +1,4 @@
-/** Tiny deterministic PRNG used for scenario choices that are not delegated to fast-check. */
+/** Small deterministic PRNG for scenario selection and reproducible jitter. */
 export class SeededRandom {
   #state: number;
 
@@ -7,19 +7,21 @@ export class SeededRandom {
   }
 
   next(): number {
-    let value = (this.#state += 0x6d2b79f5);
-    value = Math.imul(value ^ (value >>> 15), value | 1);
-    value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
-    return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+    let t = (this.#state += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
 
   integer(min: number, max: number): number {
-    if (max < min) throw new RangeError("max must be >= min");
+    if (!Number.isInteger(min) || !Number.isInteger(max) || max < min) {
+      throw new Error("integer() requires integer min <= max");
+    }
     return min + Math.floor(this.next() * (max - min + 1));
   }
 
   pick<T>(values: readonly T[]): T {
-    if (!values.length) throw new RangeError("cannot pick from an empty collection");
+    if (values.length === 0) throw new Error("Cannot pick from an empty list");
     return values[this.integer(0, values.length - 1)]!;
   }
 }
