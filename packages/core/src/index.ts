@@ -7,6 +7,7 @@ export * from "./execution-index.js";
 export * from "./controller.js";
 export * from "./artifact.js";
 export * from "./report.js";
+export * from "./reporters.js";
 export * from "./runner.js";
 export * from "./workload.js";
 export * from "./discovery.js";
