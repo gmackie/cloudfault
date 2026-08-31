@@ -35,7 +35,8 @@ export default {
     if (request.method !== "POST" || !match) return json({ error: "not found" }, { status: 404 });
 
     const orderId = decodeURIComponent(match[1]);
-    const stableKey = url.searchParams.get("stableKey") === "1";
+    const stableKey = request.headers.get("x-cloudfault-stable-idempotency") === "1"
+      || url.searchParams.get("stableKey") === "1";
     let payment;
     let lastError;
 
@@ -49,7 +50,7 @@ export default {
     }
 
     if (!payment) {
-      return json({ error: "payment_failed", detail: String(lastError) }, { status: 502 });
+      return json({ error: "payment_failed", detail: String(lastError), stableKey }, { status: 502 });
     }
 
     return json({ orderId, paymentId: payment.id, charged: true, stableKey });
