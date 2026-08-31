@@ -12,7 +12,7 @@
     "build": "npm run clean && tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/adapters packages/fast-check",
     "test:unit": "node --test test/*.test.mjs",
     "test:integration": "node --test examples/checkout/integration.test.mjs examples/outbound-stripe/integration.test.mjs examples/queue-retry/integration.test.mjs",
-    "test:workers": "vitest run --config examples/durable-object-vitest/vitest.config.js",
+    "test:workers": "vitest run --config examples/durable-object-vitest/vitest.config.js && vitest run --config examples/outbound-stripe-vitest/vitest.config.js",
     "test": "npm run build && npm run test:unit && npm run test:integration && npm run test:workers",
     "demo": "npm run build && node packages/cli/bin/cloudfault.mjs demo",
     "inspect": "npm run build && node packages/cli/bin/cloudfault.mjs inspect",
@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.2",
+    "@msw/cloudflare": "0.0.1",
     "@types/node": "^22.0.0",
     "fast-check": "^4.9.0",
     "miniflare": "^4.20260730.0",
