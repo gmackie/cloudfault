@@ -30,6 +30,7 @@ export interface FastCheckRunDetails<TCounterexample = unknown> {
 export interface FastCheckLike {
   constant<T>(value: T): ArbitraryLike<T>;
   constantFrom<T>(...values: T[]): ArbitraryLike<T>;
+  oneof?<T>(...arbs: ArbitraryLike<T>[]): ArbitraryLike<T>;
   array<T>(arb: ArbitraryLike<T>, constraints?: { minLength?: number; maxLength?: number }): ArbitraryLike<T[]>;
   tuple?<T extends unknown[]>(...arbs: { [K in keyof T]: ArbitraryLike<T[K]> }): ArbitraryLike<T>;
   record?<T extends Record<string, unknown>>(record: { [K in keyof T]: ArbitraryLike<T[K]> }): ArbitraryLike<T>;
@@ -147,20 +148,13 @@ export function workloadCommandsArbitrary<Model, Real>(
   options: { minCommands?: number; maxCommands?: number } = {},
 ): ArbitraryLike<readonly WorkloadCommand<Model, Real>[]> {
   if (!commands.length) return fc.constant([] as readonly WorkloadCommand<Model, Real>[]);
-  // constantFrom over arbitrary objects is not oneOf; create one array per
-  // command family and flatten their generated command values using tuple when
-  // available. For broad compatibility, callers may also pass a pre-combined
-  // arbitrary as the sole command arbitrary.
-  if (commands.length === 1) {
-    return fc.array(commands[0]!, {
-      minLength: options.minCommands ?? 0,
-      maxLength: options.maxCommands ?? 50,
-    });
-  }
-  if (!fc.tuple) throw new Error("Multiple command arbitraries require fast-check tuple() support");
-  const combined = fc.tuple(...commands as [ArbitraryLike<WorkloadCommand<Model, Real>>, ...ArbitraryLike<WorkloadCommand<Model, Real>>[]])
-    .map((values) => values[Math.floor(Math.random() * values.length)]!);
-  return fc.array(combined, {
+  const commandArbitrary = commands.length === 1
+    ? commands[0]!
+    : fc.oneof
+      ? fc.oneof(...commands)
+      : undefined;
+  if (!commandArbitrary) throw new Error("Multiple command arbitraries require fast-check oneof() support");
+  return fc.array(commandArbitrary, {
     minLength: options.minCommands ?? 0,
     maxLength: options.maxCommands ?? 50,
   });
