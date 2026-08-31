@@ -157,7 +157,7 @@ export async function dispatchQueueUntilSettled<T>(
   if (!worker.queue) throw new Error("Selected Miniflare Worker does not expose queue() dispatch");
   const maxRetries = Math.max(0, Math.floor(options.maxRetries ?? 3));
   const maxRounds = Math.max(1, Math.floor(options.maxRounds ?? maxRetries + 3));
-  let pending = options.messages.map((message) => ({ ...message, attempts: message.attempts ?? 1 }));
+  let pending: MiniflareQueueMessage<T>[] = options.messages.map((message) => ({ ...message, attempts: message.attempts ?? 1 }));
   const attempts: QueueDeliveryAttempt<T>[] = [];
   const acknowledged: MiniflareQueueMessage<T>[] = [];
   const deadLettered: MiniflareQueueMessage<T>[] = [];
