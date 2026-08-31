@@ -35,10 +35,7 @@ export interface WorkflowScenarioBridgeOptions {
   disableRetryDelays?: boolean;
 }
 
-/**
- * Translate CloudFault Workflow perturbations into the modifiers exposed by
- * createTestHarness()/cloudflare:test Workflow introspection.
- */
+/** Translate CloudFault Workflow perturbations into first-class Workflow test modifiers. */
 export async function applyWorkflowScenario(
   introspector: WorkflowIntrospectorLike,
   scenario: Pick<Scenario, "perturbations">,
@@ -78,8 +75,6 @@ export async function applyWorkflowScenario(
       } else if (item.kind === "workflow-disable-sleep") {
         await modifier.disableSleeps(stepName ? [{ name: stepName }] : undefined);
       }
-      // workflow-retry-delay is intentionally not synthesized here: leaving
-      // delays enabled exercises the Workflow's actual configured backoff.
     }
   });
 }
@@ -109,13 +104,14 @@ export function workflowEventTimeout(target: string, step: string): Perturbation
 
 export interface CloudflareTestApiLike {
   runDurableObjectAlarm(stub: unknown): Promise<boolean>;
+  evictDurableObject?(stub: unknown, options?: { webSockets?: "hibernate" | "close" }): Promise<void>;
 }
 
 async function optionalCloudflareTest(): Promise<CloudflareTestApiLike> {
   try {
     return await Function("return import('cloudflare:test')")() as CloudflareTestApiLike;
   } catch (error) {
-    throw new Error("Durable Object alarm execution requires the Workers Vitest cloudflare:test runtime", { cause: error });
+    throw new Error("Durable Object runtime helpers require the Workers Vitest cloudflare:test runtime", { cause: error });
   }
 }
 
@@ -125,12 +121,7 @@ export interface DurableObjectAlarmScenarioOptions {
   maxExecutions?: number;
 }
 
-/**
- * Execute a real Durable Object alarm through cloudflare:test. An alarm-retry
- * semantic variation repeats the alarm only while the runtime reports an alarm
- * was actually scheduled, avoiding fake method calls after the object cleared
- * its alarm.
- */
+/** Execute a real Durable Object alarm through cloudflare:test. */
 export async function runDurableObjectAlarmScenario(
   stub: unknown,
   scenario: Pick<Scenario, "perturbations">,
@@ -148,4 +139,29 @@ export async function runDurableObjectAlarmScenario(
     if (!ran) break;
   }
   return results;
+}
+
+export interface DurableObjectResetScenarioOptions {
+  target: string;
+  api?: CloudflareTestApiLike;
+  webSockets?: "hibernate" | "close";
+}
+
+/**
+ * Evict a real Durable Object instance when the scenario contains the
+ * `durable-object-reset` degradation. Durable storage remains intact while
+ * in-memory state is reconstructed on the next call, matching the failure
+ * boundary CloudFault wants to exercise.
+ */
+export async function applyDurableObjectResetScenario(
+  stub: unknown,
+  scenario: Pick<Scenario, "perturbations">,
+  options: DurableObjectResetScenarioOptions,
+): Promise<boolean> {
+  const reset = active(scenario, options.target).some((item) => item.kind === "durable-object-reset");
+  if (!reset) return false;
+  const api = options.api ?? await optionalCloudflareTest();
+  if (!api.evictDurableObject) throw new Error("Installed cloudflare:test runtime does not expose evictDurableObject()");
+  await api.evictDurableObject(stub, { webSockets: options.webSockets ?? "hibernate" });
+  return true;
 }
