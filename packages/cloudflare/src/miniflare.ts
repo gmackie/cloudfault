@@ -6,12 +6,29 @@ export interface MiniflareQueueMessage<T = unknown> extends QueueMessageLike<T> 
   attempts?: number;
 }
 
+export interface MiniflareQueueRetryMessage {
+  /** Current workerd FetcherQueueResult shape. */
+  msgId?: string;
+  /** Defensive compatibility with wrappers that expose an id field. */
+  id?: string;
+  delaySeconds?: number;
+}
+
+export interface MiniflareQueueRetryBatch {
+  retry?: boolean;
+  delaySeconds?: number;
+}
+
 export interface MiniflareQueueResult {
   outcome: string;
+  /** Miniflare's documented convenience shape. */
   retryAll?: boolean;
   ackAll?: boolean;
   explicitRetries?: readonly string[];
   explicitAcks?: readonly string[];
+  /** workerd's current FetcherQueueResult shape. */
+  retryBatch?: MiniflareQueueRetryBatch;
+  retryMessages?: readonly MiniflareQueueRetryMessage[];
   [key: string]: unknown;
 }
 
@@ -139,9 +156,21 @@ export interface QueueLifecycleOptions<T = unknown> {
   maxRounds?: number;
 }
 
+/**
+ * Normalize both result formats currently encountered in the Cloudflare stack:
+ * Miniflare's documented convenience fields (`retryAll`, `explicitRetries`)
+ * and workerd's FetcherQueueResult (`retryBatch`, `retryMessages`).
+ */
 function retryIds(result: MiniflareQueueResult, messages: readonly MiniflareQueueMessage[]): Set<string> {
-  if (result.retryAll) return new Set(messages.map((message) => message.id));
-  return new Set(result.explicitRetries ?? []);
+  if (result.retryAll || result.retryBatch?.retry) {
+    return new Set(messages.map((message) => message.id));
+  }
+  const ids = new Set(result.explicitRetries ?? []);
+  for (const retry of result.retryMessages ?? []) {
+    const id = retry.msgId ?? retry.id;
+    if (id) ids.add(id);
+  }
+  return ids;
 }
 
 /**
@@ -188,7 +217,7 @@ export async function dispatchQueueUntilSettled<T>(
         deadLettered.push({ ...message });
         continue;
       }
-      if (explicitAcks.has(message.id) && !result.retryAll) {
+      if (explicitAcks.has(message.id) && !result.retryAll && !result.retryBatch?.retry) {
         acknowledged.push({ ...message });
         continue;
       }
