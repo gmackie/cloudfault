@@ -78,12 +78,19 @@ export async function runScenario(input = { id: "baseline", perturbations: [] },
     const response = await app.fetch("https://checkout.example/orders/812/pay", { method: "POST", headers });
     const body = await response.json();
     const stripeState = stripe.snapshot();
+    const historyBeforeAppCompletion = controller.history.snapshot();
+    const observedIdempotencyKeys = historyBeforeAppCompletion
+      .filter((event) => event.type === "invoke" && event.operation?.target === "stripe")
+      .map((event) => event.value?.idempotencyKey)
+      .filter((value) => typeof value === "string");
     const state = {
       responseStatus: response.status,
       response: body,
       stripe: stripeState,
       charges: stripeState.successfulCharges,
       stableKey: body?.stableKey === true,
+      observedIdempotencyKeys,
+      uniqueObservedIdempotencyKeys: [...new Set(observedIdempotencyKeys)],
     };
     controller.complete(appOperation, response.ok ? "ok" : "fail", state, {
       actual: response.ok ? "committed" : "unknown",
