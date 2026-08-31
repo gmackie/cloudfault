@@ -74,8 +74,8 @@ export async function runScenario(input = { id: "baseline", perturbations: [] },
   try {
     await harness.listen();
     const app = harness.getWorker("cloudfault-outbound-stripe-app");
-    const suffix = options.stableKey ? "?stableKey=1" : "";
-    const response = await app.fetch(`https://checkout.example/orders/812/pay${suffix}`, { method: "POST" });
+    const headers = options.stableKey ? { "x-cloudfault-stable-idempotency": "1" } : undefined;
+    const response = await app.fetch("https://checkout.example/orders/812/pay", { method: "POST", headers });
     const body = await response.json();
     const stripeState = stripe.snapshot();
     const state = {
@@ -83,7 +83,7 @@ export async function runScenario(input = { id: "baseline", perturbations: [] },
       response: body,
       stripe: stripeState,
       charges: stripeState.successfulCharges,
-      stableKey: Boolean(options.stableKey),
+      stableKey: body?.stableKey === true,
     };
     controller.complete(appOperation, response.ok ? "ok" : "fail", state, {
       actual: response.ok ? "committed" : "unknown",
