@@ -14,14 +14,14 @@ async function createAndConfirm(orderId, attempt, stableKey) {
   const idempotencyKey = stableKey
     ? `order:${orderId}:payment`
     : `order:${orderId}:attempt:${attempt}:${crypto.randomUUID()}`;
+  const headers = new Headers();
+  headers.set("Authorization", "Bearer sk_test_cloudfault");
+  headers.set("Content-Type", "application/x-www-form-urlencoded");
+  headers.set("Idempotency-Key", idempotencyKey);
 
   const response = await fetch("https://api.stripe.com/v1/payment_intents", {
     method: "POST",
-    headers: {
-      authorization: "Bearer sk_test_cloudfault",
-      "content-type": "application/x-www-form-urlencoded",
-      "idempotency-key": idempotencyKey,
-    },
+    headers,
     body,
   });
   if (!response.ok) throw new Error(`Stripe returned ${response.status}`);
