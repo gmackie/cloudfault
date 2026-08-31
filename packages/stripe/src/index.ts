@@ -12,12 +12,43 @@ const paymentIntent = /^\/v1\/payment_intents\/([^/]+)$/;
 const paymentIntentConfirm = /^\/v1\/payment_intents\/([^/]+)\/confirm$/;
 const refund = /^\/v1\/refunds(?:\/([^/]+))?$/;
 
-function formBoolean(value: FormDataEntryValue | null): boolean {
-  return value === "true" || value === "1";
+function bodyBoolean(value: unknown): boolean {
+  return value === true || value === 1 || value === "true" || value === "1";
 }
 
 function requestIdempotency(request: Request): string | undefined {
   return request.headers.get("Idempotency-Key") ?? undefined;
+}
+
+async function requestFields(request: Request): Promise<Record<string, unknown>> {
+  const clone = request.clone();
+  const contentType = clone.headers.get("content-type")?.toLowerCase() ?? "";
+
+  if (contentType.includes("application/json")) {
+    const value = await clone.json().catch(() => ({}));
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value as Record<string, unknown>
+      : {};
+  }
+
+  if (contentType.includes("application/x-www-form-urlencoded") || contentType.includes("multipart/form-data")) {
+    const form = await clone.formData();
+    return Object.fromEntries([...form.entries()].map(([key, value]) => [key, typeof value === "string" ? value : value.name]));
+  }
+
+  // A few hand-written fixtures omit Content-Type while still sending Stripe's
+  // traditional URL-encoded shape. Treat a parseable body as URLSearchParams,
+  // otherwise leave it empty instead of turning a mock-backend detail into a
+  // synthetic 500 that hides the semantic fault under test.
+  const text = await clone.text();
+  if (!text) return {};
+  try {
+    const params = new URLSearchParams(text);
+    if ([...params.keys()].length > 0) return Object.fromEntries(params.entries());
+  } catch {
+    // ignored
+  }
+  return {};
 }
 
 export const stripeAdapter = defineAdapter({
@@ -209,10 +240,10 @@ export class StripeMemoryBackend {
 
     let response: Response;
     if (request.method === "POST" && url.pathname === "/v1/payment_intents") {
-      const form = await request.clone().formData();
-      const amount = Number(form.get("amount") ?? 0);
-      const currency = String(form.get("currency") ?? "usd");
-      const shouldConfirm = formBoolean(form.get("confirm"));
+      const fields = await requestFields(request);
+      const amount = Number(fields.amount ?? 0);
+      const currency = String(fields.currency ?? "usd");
+      const shouldConfirm = bodyBoolean(fields.confirm);
       const id = `pi_cf_${++this.#piSequence}`;
       const intent: StripePaymentIntent = {
         id,
@@ -246,12 +277,12 @@ export class StripeMemoryBackend {
           ? Response.json(intent)
           : Response.json({ error: { message: "No such payment_intent" } }, { status: 404 });
       } else if (request.method === "POST" && url.pathname === "/v1/refunds") {
-        const form = await request.clone().formData();
+        const fields = await requestFields(request);
         const value: StripeRefund = {
           id: `re_cf_${++this.#refundSequence}`,
           object: "refund",
-          payment_intent: form.get("payment_intent")?.toString(),
-          amount: form.get("amount") ? Number(form.get("amount")) : undefined,
+          payment_intent: fields.payment_intent === undefined ? undefined : String(fields.payment_intent),
+          amount: fields.amount === undefined || fields.amount === "" ? undefined : Number(fields.amount),
           status: "succeeded",
         };
         this.#refunds.set(value.id, value);
