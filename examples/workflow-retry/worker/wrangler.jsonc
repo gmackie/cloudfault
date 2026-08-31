@@ -1,0 +1,12 @@
+{
+  "name": "cloudfault-workflow-retry",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-20",
+  "workflows": [
+    {
+      "name": "cloudfault-order-workflow",
+      "binding": "ORDER_FLOW",
+      "class_name": "OrderWorkflow"
+    }
+  ]
+}
