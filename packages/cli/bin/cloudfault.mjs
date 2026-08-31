@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { doctorProject, initProject, sourceFiles } from "../lib/project.mjs";
 
 const core = () => import("@cloudfault/core");
 const cloudflare = () => import("@cloudfault/cloudflare");
@@ -15,10 +16,12 @@ Commands:
   replay <artifact>     Re-run the scenario stored in a failure artifact
   timeline <artifact>   Render a saved failure history
   inspect <wrangler> [source-root]
-                        Discover Cloudflare bindings and known API integrations
+                        Discover bindings, integrations, and recommended tests
+  doctor [path]         Validate runtime dependencies and semantic coverage
+  recommend [path]      Print semantics-grounded scenario/invariant suggestions
   adapters              List bundled unofficial semantic API adapters
-  init [path]           Create a starter cloudfault.config.mjs
-  demo                  Run the in-memory stale-read + ambiguous-commit demo`;
+  init [path]           Generate a project-aware starter config + recommendations
+  demo                  Run the stale-read + ambiguous-commit demo`;
 }
 
 function safeFilePart(value) {
@@ -37,15 +40,73 @@ async function loadConfig(modulePath) {
   const mod = await importModule(modulePath);
   const config = mod.cloudfault ?? mod.default;
   if (!config || typeof config !== "object") throw new Error(`No 'cloudfault' or default config export found in ${modulePath}`);
-  if (!Array.isArray(config.faultPoints)) throw new Error("CloudFault config must expose faultPoints[]");
+  if (!Array.isArray(config.faultPoints) && typeof config.resolveFaultSpace !== "function") {
+    throw new Error("CloudFault config must expose faultPoints[] or resolveFaultSpace(discoveredCall)");
+  }
   if (typeof config.execute !== "function") throw new Error("CloudFault config must expose execute(scenario)");
   return config;
 }
 
+async function faultPointsForConfig(config) {
+  if (Array.isArray(config.faultPoints) && config.faultPoints.length) return config.faultPoints;
+  const { faultPointsFromHistory } = await core();
+  const baseline = await config.execute({ id: "baseline-discovery", perturbations: [], seed: config.seed });
+  return faultPointsFromHistory(baseline.history, config.resolveFaultSpace);
+}
+
+function reportPaths(directory, testName) {
+  const safe = safeFilePart(testName);
+  return {
+    json: path.join(directory, `${safe}.json`),
+    junit: path.join(directory, `${safe}.junit.xml`),
+    html: path.join(directory, `${safe}.html`),
+  };
+}
+
+async function writeRunReports(config, result, artifact) {
+  const {
+    dependencyCoverage,
+    githubAnnotations,
+    htmlFailureReport,
+    jsonReport,
+    junitReport,
+  } = await core();
+  const directory = path.resolve(config.reportDirectory ?? ".cloudfault/reports");
+  fs.mkdirSync(directory, { recursive: true });
+  const paths = reportPaths(directory, config.name ?? "cloudfault");
+  const coverage = result.baseline ? dependencyCoverage(result.baseline, result.runs) : undefined;
+  if (result.baseline) {
+    fs.writeFileSync(paths.json, jsonReport(result.baseline, result.runs));
+    fs.writeFileSync(paths.junit, junitReport(config.name ?? "cloudfault", result.baseline, result.runs));
+  }
+  if (artifact) fs.writeFileSync(paths.html, htmlFailureReport(artifact, { dependencyCoverage: coverage }));
+  if (process.env.GITHUB_ACTIONS && result.firstFailure) {
+    for (const annotation of githubAnnotations(result.firstFailure)) console.log(annotation);
+  }
+  return { paths, coverage };
+}
+
 async function runConfig(modulePath) {
-  const { createFailureArtifact, exploreScenarios, renderFailureArtifact, renderChecks } = await core();
+  const {
+    FileScenarioCache,
+    createFailureArtifact,
+    exploreScenarios,
+    renderChecks,
+    renderFailureArtifact,
+    withScenarioCache,
+  } = await core();
   const config = await loadConfig(modulePath);
-  const result = await exploreScenarios(config.faultPoints, config.execute, {
+  const faultPoints = await faultPointsForConfig(config);
+  let execute = config.execute;
+  if (config.cache === true || config.cache === "file") {
+    execute = withScenarioCache(execute, {
+      cache: new FileScenarioCache(config.cacheFile),
+      testName: config.name ?? modulePath,
+      workloadFingerprint: config.workloadFingerprint,
+      environmentFingerprint: config.environmentFingerprint,
+    });
+  }
+  const result = await exploreScenarios(faultPoints, execute, {
     maxDepth: config.maxDepth ?? 1,
     maxScenarios: config.maxScenarios,
     seed: config.seed,
@@ -54,9 +115,11 @@ async function runConfig(modulePath) {
   });
 
   if (!result.firstFailure) {
+    const reports = await writeRunReports(config, result);
     console.log(`CloudFault PASS — ${config.name ?? modulePath}`);
     console.log(`Scenarios executed: ${result.runs.length + 1}`);
     if (result.baseline) console.log(renderChecks(result.baseline.checks));
+    if (reports.coverage) console.log(`Dependency coverage: ${reports.coverage.exercised}/${reports.coverage.discovered} (${(reports.coverage.ratio * 100).toFixed(1)}%)`);
     return;
   }
 
@@ -65,25 +128,21 @@ async function runConfig(modulePath) {
     run: result.firstFailure,
     minimalFailureSet: result.minimalFailureSet,
     replay: config.replay ?? { module: modulePath, exportName: "runScenario", testName: config.name },
-    environment: {
-      node: process.version,
-      platform: process.platform,
-      arch: process.arch,
-    },
-    metadata: {
-      minimizationAttempts: result.minimizationAttempts,
-      exploredRuns: result.runs.length,
-    },
+    environment: { node: process.version, platform: process.platform, arch: process.arch },
+    metadata: { minimizationAttempts: result.minimizationAttempts, exploredRuns: result.runs.length },
   });
 
-  const directory = path.resolve(config.failureDirectory ?? ".cloudfault/failures");
-  fs.mkdirSync(directory, { recursive: true });
+  const failureDirectory = path.resolve(config.failureDirectory ?? ".cloudfault/failures");
+  fs.mkdirSync(failureDirectory, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const artifactPath = path.join(directory, `${stamp}-${safeFilePart(artifact.testName)}.json`);
+  const artifactPath = path.join(failureDirectory, `${stamp}-${safeFilePart(artifact.testName)}.json`);
   fs.writeFileSync(artifactPath, JSON.stringify(artifact, null, 2) + "\n");
+  const reports = await writeRunReports(config, result, artifact);
 
   console.log(renderFailureArtifact(artifact));
+  if (reports.coverage) console.log(`\nDependency coverage: ${reports.coverage.exercised}/${reports.coverage.discovered} (${(reports.coverage.ratio * 100).toFixed(1)}%)`);
   console.log(`\nFailure artifact: ${artifactPath}`);
+  console.log(`HTML report: ${reports.paths.html}`);
   console.log(`Replay: cloudfault replay ${artifactPath}`);
   process.exitCode = 1;
 }
@@ -96,19 +155,13 @@ async function replay(file) {
     console.log(renderTimeline(artifact.history));
     throw new Error("Artifact has no replay.module; timeline rendered but execution cannot be repeated");
   }
-
   const modulePath = artifact.replay.module;
   const mod = await importModule(modulePath);
   const exportName = artifact.replay.exportName ?? "runScenario";
   const execute = mod[exportName];
   if (typeof execute !== "function") throw new Error(`Replay module ${modulePath} does not export ${exportName}()`);
-
   const perturbations = artifact.minimalFailureSet ?? artifact.scenario.perturbations;
-  const scenario = {
-    ...artifact.scenario,
-    id: perturbations.length ? perturbations.map((item) => item.id).join("+") : "baseline",
-    perturbations,
-  };
+  const scenario = { ...artifact.scenario, id: perturbations.length ? perturbations.map((item) => item.id).join("+") : "baseline", perturbations };
   const result = await execute(scenario, artifact.replay.args);
   console.log(`CloudFault replay — ${artifact.testName}\n`);
   console.log(renderChecks(result.checks));
@@ -129,25 +182,9 @@ async function timeline(file) {
   console.log(renderFailureArtifact(artifact));
 }
 
-async function sourceFiles(root) {
-  const extensions = new Set([".js", ".mjs", ".cjs", ".ts", ".mts", ".cts", ".tsx", ".jsx"]);
-  const ignored = new Set(["node_modules", ".git", "dist", "build", ".wrangler", ".cloudfault", "coverage"]);
-  const output = [];
-  const visit = (directory) => {
-    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
-      if (ignored.has(entry.name)) continue;
-      const candidate = path.join(directory, entry.name);
-      if (entry.isDirectory()) visit(candidate);
-      else if (entry.isFile() && extensions.has(path.extname(entry.name))) output.push(candidate);
-    }
-  };
-  if (fs.existsSync(root) && fs.statSync(root).isDirectory()) visit(root);
-  return output;
-}
-
 async function inspectWrangler(file, sourceRoot) {
   const { discoverWranglerTopology } = await cloudflare();
-  const { detectAdaptersFromSource, mergeAdapterEvidence } = await adapters();
+  const { detectAdaptersFromSource, mergeAdapterEvidence, recommendCloudFaultCoverage, recommendationMarkdown } = await adapters();
   const absolute = path.resolve(file);
   const topology = discoverWranglerTopology(fs.readFileSync(absolute, "utf8"));
   console.log(`CloudFault topology: ${absolute}\n`);
@@ -157,17 +194,13 @@ async function inspectWrangler(file, sourceRoot) {
     console.log("Cloudflare bindings:");
     for (const item of topology.bindings) console.log(`  ${item.type.padEnd(18)} ${item.binding}`);
   }
-
   const root = path.resolve(sourceRoot ?? path.dirname(absolute));
   const findings = [];
-  for (const candidate of await sourceFiles(root)) {
+  for (const candidate of sourceFiles(root)) {
     let source;
     try { source = fs.readFileSync(candidate, "utf8"); } catch { continue; }
     for (const finding of detectAdaptersFromSource(source)) {
-      findings.push({
-        ...finding,
-        evidence: finding.evidence.map((evidence) => `${path.relative(root, candidate)}:${evidence}`),
-      });
+      findings.push({ ...finding, evidence: finding.evidence.map((evidence) => `${path.relative(root, candidate)}:${evidence}`) });
     }
   }
   const detected = mergeAdapterEvidence(findings);
@@ -177,72 +210,65 @@ async function inspectWrangler(file, sourceRoot) {
     console.log(`  ${finding.adapter.padEnd(18)} ${finding.provider}`);
     for (const evidence of finding.evidence.slice(0, 4)) console.log(`    - ${evidence}`);
   }
+  const recommendations = recommendCloudFaultCoverage(topology.bindings, detected);
+  console.log("\nRecommended correctness coverage:\n");
+  console.log(recommendationMarkdown(recommendations));
 }
 
 async function listAdapters() {
   const { firstPartyAdapters } = await adapters();
   console.log("CloudFault bundled unofficial adapters\n");
-  for (const adapter of firstPartyAdapters) {
-    console.log(`${adapter.manifest.name.padEnd(18)} ${adapter.manifest.provider}`);
-  }
+  for (const adapter of firstPartyAdapters) console.log(`${adapter.manifest.name.padEnd(18)} ${adapter.manifest.provider}`);
   console.log(`\n${firstPartyAdapters.length} adapters`);
 }
 
-function init(target = "cloudfault.config.mjs") {
-  const absolute = path.resolve(target);
-  if (fs.existsSync(absolute)) throw new Error(`${absolute} already exists`);
-  const content = `import { defineCloudFault, invariant } from "@cloudfault/core";
+function doctor(target) {
+  const report = doctorProject(target ?? process.cwd());
+  console.log(`CloudFault doctor — ${report.project.root}\n`);
+  for (const check of report.checks) console.log(`${check.valid ? "PASS" : "WARN"} ${check.name.padEnd(28)} ${check.detail}`);
+  console.log(`\nBindings: ${report.project.topology?.bindings.length ?? 0}`);
+  console.log(`Detected adapters: ${report.project.adapters.map((item) => item.adapter).join(", ") || "none"}`);
+  console.log(`Recommendations: ${report.project.recommendations.length}`);
+  if (report.unsupportedBindings.length) {
+    console.log("\nBindings without dedicated semantic packs:");
+    for (const item of report.unsupportedBindings) console.log(`  ${item.type.padEnd(18)} ${item.binding}`);
+  }
+  if (!report.valid) process.exitCode = 1;
+}
 
-// Import semantic/fault packs and define the application-specific invariants
-// that must hold under every explored scenario.
-export const cloudfault = defineCloudFault({
-  name: "my-worker-correctness",
-  maxDepth: 2,
-  faultPoints: [],
+function recommend(target) {
+  const { project } = doctorProject(target ?? process.cwd());
+  return adapters().then(({ recommendationMarkdown }) => console.log(recommendationMarkdown(project.recommendations)));
+}
 
-  async execute(scenario) {
-    // Start your Cloudflare test harness, configure nemesis bindings from
-    // scenario.perturbations, exercise the workload, then return:
-    // { scenario, history, checks, state }
-    throw new Error("Implement execute(scenario)");
-  },
-});
-`;
-  fs.mkdirSync(path.dirname(absolute), { recursive: true });
-  fs.writeFileSync(absolute, content);
-  console.log(`Created ${absolute}`);
+function init(target) {
+  const result = initProject(target ?? process.cwd());
+  console.log(`Created ${result.configPath}`);
+  console.log(`Created ${result.recommendationPath}`);
+  console.log(`Detected ${result.project.topology?.bindings.length ?? 0} Cloudflare bindings and ${result.project.adapters.length} external adapters.`);
 }
 
 async function runDemo() {
   const { History, invariant, minimizeFailureSet, runCheckers, renderTimeline } = await core();
   const { EventuallyConsistentKv, staleKvRead } = await cloudflare();
   const { stripeAdapter } = await import("@cloudfault/stripe");
-
   const request = new Request("https://api.stripe.com/v1/payment_intents/pi_demo/confirm", { method: "POST" });
   const match = stripeAdapter.match(request);
   const ambiguous = stripeAdapter.faultSpace(match.operation).find((item) => item.kind === "commit-then-timeout");
   const stale = staleKvRead("ORDER_STATE", { region: "FRA", versionsBehind: 1 });
   const original = [stale, ambiguous];
-
   async function execute(active) {
     const activeIds = new Set(active.map((item) => item.id));
     const history = new History(() => 0);
     const kv = new EventuallyConsistentKv();
-    kv.write("PENDING", 1);
-    kv.write("PAID", 2);
-    if (activeIds.has(stale.id)) kv.setObserverVersion("FRA", 1);
-    else kv.converge("FRA");
+    kv.write("PENDING", 1); kv.write("PAID", 2);
+    if (activeIds.has(stale.id)) kv.setObserverVersion("FRA", 1); else kv.converge("FRA");
     const state = { charges: 0, observed: kv.read("FRA").visibleValue };
     const checkout = { id: "checkout-2", name: "checkout", process: 2, resource: "order-812" };
     history.invoke(checkout, { observedOrderState: state.observed });
     if (state.observed !== "PAID") {
-      // The first provider attempt commits. Under the ambiguous fault the caller
-      // does not observe success and retries with a new idempotency context.
       state.charges++;
-      if (activeIds.has(ambiguous.id)) {
-        history.perturb(ambiguous, checkout);
-        state.charges++;
-      }
+      if (activeIds.has(ambiguous.id)) { history.perturb(ambiguous, checkout); state.charges++; }
     }
     history.complete(checkout, "ok", { charges: state.charges });
     const checks = await runCheckers([
@@ -250,7 +276,6 @@ async function runDemo() {
     ], { history: history.snapshot(), state });
     return { failed: checks.some((item) => !item.valid), history: history.snapshot(), checks, state };
   }
-
   const combined = await execute(original);
   const minimal = await minimizeFailureSet(original, async (candidate) => (await execute(candidate)).failed);
   console.log("CloudFault — systematic distributed-correctness demo\n");
@@ -267,6 +292,8 @@ try {
   else if (command === "replay" && args[0]) await replay(args[0]);
   else if (command === "timeline" && args[0]) await timeline(args[0]);
   else if (command === "inspect" && args[0]) await inspectWrangler(args[0], args[1]);
+  else if (command === "doctor") doctor(args[0]);
+  else if (command === "recommend") await recommend(args[0]);
   else if (command === "adapters") await listAdapters();
   else if (command === "init") init(args[0]);
   else if (command === "demo") await runDemo();
