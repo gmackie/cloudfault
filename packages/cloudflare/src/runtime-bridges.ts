@@ -126,7 +126,7 @@ export interface DurableObjectAlarmScenarioOptions {
 }
 
 /**
- * Execute a real Durable Object alarm through cloudflare:test. A duplicate
+ * Execute a real Durable Object alarm through cloudflare:test. An alarm-retry
  * semantic variation repeats the alarm only while the runtime reports an alarm
  * was actually scheduled, avoiding fake method calls after the object cleared
  * its alarm.
@@ -138,7 +138,7 @@ export async function runDurableObjectAlarmScenario(
 ): Promise<readonly boolean[]> {
   const api = options.api ?? await optionalCloudflareTest();
   const perturbations = active(scenario, options.target);
-  const duplicate = perturbations.some((item) => item.kind === "duplicate-alarm-delivery");
+  const duplicate = perturbations.some((item) => item.kind === "alarm-retry");
   const requested = duplicate ? 2 : 1;
   const executions = Math.min(requested, options.maxExecutions ?? 2);
   const results: boolean[] = [];
