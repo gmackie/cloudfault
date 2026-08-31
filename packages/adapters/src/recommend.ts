@@ -87,8 +87,8 @@ export function recommendCloudFaultCoverage(
     if (MESSAGE_ADAPTERS.has(target)) recommendations.push({ id: `adapter:${target}:message-at-most-once`, kind: "invariant", priority: "medium", target, title: `Prevent duplicate ${detected.provider} sends`, reason: "Timeout-after-send ambiguity can duplicate messages or notifications.", invariantTemplate: "atMostOnce(messageSend, logicalNotificationId)" });
   }
 
-  return unique(recommendations).sort((a, b) => {
-    const rank = { high: 0, medium: 1, low: 2 } as const;
+  return [...unique(recommendations)].sort((a: CloudFaultRecommendation, b: CloudFaultRecommendation) => {
+    const rank: Record<CloudFaultRecommendation["priority"], number> = { high: 0, medium: 1, low: 2 };
     return rank[a.priority] - rank[b.priority] || a.id.localeCompare(b.id);
   });
 }
