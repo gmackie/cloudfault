@@ -11,13 +11,15 @@
     }
   },
   "dependencies": {
-    "@cloudfault/core": "0.1.0"
+    "@cloudfault/core": "file:../core"
   },
   "peerDependencies": {
     "fast-check": ">=4"
   },
   "peerDependenciesMeta": {
-    "fast-check": { "optional": true }
+    "fast-check": {
+      "optional": true
+    }
   },
   "license": "MIT"
 }

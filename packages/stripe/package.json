@@ -11,8 +11,8 @@
     }
   },
   "dependencies": {
-    "@cloudfault/adapter-sdk": "0.1.0",
-    "@cloudfault/core": "0.1.0"
+    "@cloudfault/adapter-sdk": "file:../adapter-sdk",
+    "@cloudfault/core": "file:../core"
   },
   "license": "MIT"
 }

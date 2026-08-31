@@ -6,10 +6,10 @@
     "cloudfault": "./bin/cloudfault.mjs"
   },
   "dependencies": {
-    "@cloudfault/core": "0.1.0",
-    "@cloudfault/cloudflare": "0.1.0",
-    "@cloudfault/stripe": "0.1.0",
-    "@cloudfault/adapters": "0.1.0"
+    "@cloudfault/core": "file:../core",
+    "@cloudfault/cloudflare": "file:../cloudflare",
+    "@cloudfault/stripe": "file:../stripe",
+    "@cloudfault/adapters": "file:../adapters"
   },
   "license": "MIT"
 }

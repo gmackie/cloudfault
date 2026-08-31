@@ -11,8 +11,8 @@
     }
   },
   "dependencies": {
-    "@cloudfault/core": "0.1.0",
-    "@cloudfault/adapter-sdk": "0.1.0"
+    "@cloudfault/core": "file:../core",
+    "@cloudfault/adapter-sdk": "file:../adapter-sdk"
   },
   "peerDependencies": {
     "wrangler": ">=4.106.0",

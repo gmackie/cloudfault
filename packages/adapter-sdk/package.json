@@ -11,7 +11,7 @@
     }
   },
   "dependencies": {
-    "@cloudfault/core": "0.1.0"
+    "@cloudfault/core": "file:../core"
   },
   "license": "MIT"
 }
