@@ -68,7 +68,6 @@ export async function executeScenarioBatch<State>(
   let scheduled = 0;
   let estimatedCost = 0;
   let stoppedForFailure = false;
-  let firstFailureIndex: number | undefined;
 
   function budgetReason(index: number): SkippedScenario["reason"] | undefined {
     if (stoppedForFailure) return "failure-stop";
@@ -94,17 +93,12 @@ export async function executeScenarioBatch<State>(
       estimatedCost += cost;
       const run = await execute(scenario);
       results.set(index, run);
-      if (checksFailed(run.checks) && firstFailureIndex === undefined) {
-        firstFailureIndex = index;
-        if (stopOnFirstFailure) stoppedForFailure = true;
-      }
+      if (checksFailed(run.checks) && stopOnFirstFailure) stoppedForFailure = true;
     }
   }
 
   await Promise.all(Array.from({ length: Math.min(concurrency, Math.max(1, scenarios.length)) }, () => worker()));
 
-  // Anything never reached because all workers exhausted after a stop is made
-  // explicit in the report rather than silently disappearing.
   for (let index = 0; index < scenarios.length; index += 1) {
     if (results.has(index) || skipped.has(index)) continue;
     skipped.set(index, { scenario: scenarios[index]!, reason: stoppedForFailure ? "failure-stop" : "run-budget" });
@@ -117,6 +111,6 @@ export async function executeScenarioBatch<State>(
     skipped: orderedSkipped,
     estimatedCost,
     elapsedMs: performance.now() - started,
-    firstFailure: firstFailureIndex === undefined ? undefined : results.get(firstFailureIndex),
+    firstFailure: orderedRuns.find((run) => checksFailed(run.checks)),
   };
 }
