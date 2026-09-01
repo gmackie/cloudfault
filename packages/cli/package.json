@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "bin": {
-    "cloudfault": "./bin/cloudfault.mjs"
+    "cloudfault": "./bin/cloudfault-v2.mjs"
   },
   "dependencies": {
     "@cloudfault/core": "file:../core",
