@@ -1,4 +1,5 @@
-import { snapshotSemanticContract, type AdapterConformanceCase, type SemanticContractSnapshot } from "@cloudfault/adapter-sdk/contracts";
+import { snapshotSemanticContract, type SemanticContractSnapshot } from "@cloudfault/adapter-sdk/contracts";
+import type { AdapterConformanceCase } from "@cloudfault/adapter-sdk/conformance";
 import { providerSemantics } from "./registry.js";
 import { semanticAdapter } from "./semantics.js";
 
