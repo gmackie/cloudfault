@@ -10,6 +10,7 @@ test("adaptive exploration discovers fallback calls revealed only by earlier fau
   const execute = async (scenario) => {
     const active = new Set(scenario.perturbations.map((item) => item.id));
     const history = new History(() => 1);
+    let fallbackFailed = false;
     const primary = { id: `primary-${scenario.id}`, name: "primary.call", process: "client", target: "A", resource: "order:1" };
     history.invoke(primary);
     if (active.has("fail-a")) {
@@ -18,6 +19,7 @@ test("adaptive exploration discovers fallback calls revealed only by earlier fau
       const fallback = { id: `fallback-${scenario.id}`, name: "fallback.call", process: "client", target: "B", resource: "order:1", parentId: primary.id };
       history.invoke(fallback);
       if (active.has("fail-b")) {
+        fallbackFailed = true;
         history.perturb(failB, fallback);
         history.complete(fallback, "fail");
       } else history.complete(fallback, "ok");
@@ -25,7 +27,7 @@ test("adaptive exploration discovers fallback calls revealed only by earlier fau
     return {
       scenario,
       history: history.snapshot(),
-      checks: [{ valid: !active.has("fail-b"), checker: "fallback-survives" }],
+      checks: [{ valid: !fallbackFailed, checker: "fallback-survives" }],
     };
   };
   const resolve = (call) => call.target === "A" ? [failA] : call.target === "B" ? [failB] : [];
@@ -33,5 +35,5 @@ test("adaptive exploration discovers fallback calls revealed only by earlier fau
   assert.equal(result.discoveredCalls, 2);
   assert.ok(result.faultPoints.some((point) => point.target === "B"));
   assert.ok(result.firstFailure?.scenario.perturbations.some((item) => item.id === "fail-b"));
-  assert.deepEqual(result.minimalFailureSet?.map((item) => item.id), ["fail-b"]);
+  assert.deepEqual(result.minimalFailureSet?.map((item) => item.id).sort(), ["fail-a", "fail-b"]);
 });
