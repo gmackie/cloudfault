@@ -25,5 +25,6 @@ export * from "./invariants.js";
 export * from "./diagnostics.js";
 export * from "./guided.js";
 export * from "./guidance-store.js";
+export * from "./execution-pool.js";
 export * from "./remote-agent.js";
 export * from "./negotiated-remote.js";
