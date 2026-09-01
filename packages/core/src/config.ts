@@ -6,7 +6,7 @@ export interface ConfigIssue {
   message: string;
 }
 
-const STRATEGIES = new Set(["exhaustive", "pairwise", "guided", "incidents", "hybrid"]);
+const STRATEGIES = new Set(["exhaustive", "pairwise", "guided", "coverage-guided", "incidents", "hybrid"]);
 
 export function validateCloudFaultConfig(config: CloudFaultConfig): readonly ConfigIssue[] {
   const issues: ConfigIssue[] = [];
@@ -20,6 +20,10 @@ export function validateCloudFaultConfig(config: CloudFaultConfig): readonly Con
   if (config.maxDepth !== undefined && (!Number.isInteger(config.maxDepth) || config.maxDepth < 0)) error("maxDepth", "maxDepth must be a non-negative integer");
   if (config.maxScenarios !== undefined && (!Number.isInteger(config.maxScenarios) || config.maxScenarios <= 0)) error("maxScenarios", "maxScenarios must be a positive integer");
   if (config.seed !== undefined && (!Number.isInteger(config.seed) || !Number.isFinite(config.seed))) error("seed", "seed must be a finite integer");
+  if (config.concurrency !== undefined && (!Number.isInteger(config.concurrency) || config.concurrency <= 0)) error("concurrency", "concurrency must be a positive integer");
+  if (config.budget?.maxRuns !== undefined && (!Number.isInteger(config.budget.maxRuns) || config.budget.maxRuns <= 0)) error("budget.maxRuns", "maxRuns must be a positive integer");
+  if (config.budget?.maxEstimatedCost !== undefined && (!Number.isFinite(config.budget.maxEstimatedCost) || config.budget.maxEstimatedCost <= 0)) error("budget.maxEstimatedCost", "maxEstimatedCost must be positive and finite");
+  if (config.budget?.maxWallTimeMs !== undefined && (!Number.isFinite(config.budget.maxWallTimeMs) || config.budget.maxWallTimeMs <= 0)) error("budget.maxWallTimeMs", "maxWallTimeMs must be positive and finite");
 
   const pointIds = new Set<string>();
   const perturbationIds = new Set<string>();
@@ -46,9 +50,11 @@ export function validateCloudFaultConfig(config: CloudFaultConfig): readonly Con
 
   if (config.strategy === "incidents" && !config.incidents?.length) warn("incidents", "incidents strategy has no incident profiles");
   if (config.strategy === "guided" && !config.previousRuns?.length) warn("previousRuns", "guided strategy has no previous feedback and will behave mostly as novelty ordering");
+  if (config.strategy === "coverage-guided" && !config.previousRuns?.length) warn("previousRuns", "coverage-guided strategy has no prior run feedback; the first plan will prioritize unseen faults/pairs only");
   if (config.strategy === "exhaustive" && (config.maxDepth ?? 1) > 3 && config.faultPoints.length > 8 && config.maxScenarios === undefined) {
-    warn("maxScenarios", "deep exhaustive search over many fault points can grow combinatorially; set maxScenarios or use hybrid/pairwise");
+    warn("maxScenarios", "deep exhaustive search over many fault points can grow combinatorially; set maxScenarios or use hybrid/pairwise/coverage-guided");
   }
+  if ((config.concurrency ?? 1) > 1) warn("concurrency", "parallel scenarios must not share mutable harness/runtime state unless the execute() implementation isolates each scenario");
 
   return issues;
 }
