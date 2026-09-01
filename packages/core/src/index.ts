@@ -22,3 +22,6 @@ export * from "./backend.js";
 export * from "./guidance.js";
 export * from "./oracles.js";
 export * from "./invariants.js";
+export * from "./diagnostics.js";
+export * from "./guided.js";
+export * from "./remote-agent.js";
