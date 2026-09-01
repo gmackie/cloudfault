@@ -1,6 +1,9 @@
 import type { WebhookSigner } from "./capabilities.js";
 
-function bytes(value: string): Uint8Array { return new TextEncoder().encode(value); }
+function bytes(value: string): ArrayBuffer {
+  const encoded = new TextEncoder().encode(value);
+  return encoded.buffer.slice(encoded.byteOffset, encoded.byteOffset + encoded.byteLength) as ArrayBuffer;
+}
 function hex(value: ArrayBuffer): string { return [...new Uint8Array(value)].map((byte) => byte.toString(16).padStart(2, "0")).join(""); }
 function base64(value: ArrayBuffer): string {
   let binary = "";
