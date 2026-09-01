@@ -24,12 +24,15 @@ export interface RemoteAgentOptions<State = unknown> {
   maxBodyBytes?: number;
 }
 
+export type RemoteAgentFetch = (input: Request | string | URL, init?: RequestInit) => Promise<Response>;
+
 function json(value: unknown, status = 200): Response {
   return new Response(JSON.stringify(value), { status, headers: { "content-type": "application/json" } });
 }
 
-export function createRemoteExecutionHandler<State = unknown>(options: RemoteAgentOptions<State>): (request: Request) => Promise<Response> {
-  return async (request) => {
+export function createRemoteExecutionHandler<State = unknown>(options: RemoteAgentOptions<State>): RemoteAgentFetch {
+  return async (input, init) => {
+    const request = input instanceof Request ? input : new Request(input, init);
     if (options.authorize && !(await options.authorize(request))) return json({ error: "unauthorized" }, 401);
     const url = new URL(request.url);
     if (request.method === "GET" && (url.pathname.endsWith("/capabilities") || url.searchParams.has("capabilities"))) {
@@ -44,10 +47,7 @@ export function createRemoteExecutionHandler<State = unknown>(options: RemoteAge
     if (envelope.schema !== "cloudfault.remote-execution" || envelope.version !== 1 || !envelope.scenario) return json({ error: "invalid_envelope" }, 400);
     try { return json(await options.execute(envelope.scenario, envelope.context)); }
     catch (error) {
-      return json({
-        error: "execution_failed",
-        message: error instanceof Error ? error.message : String(error),
-      }, 500);
+      return json({ error: "execution_failed", message: error instanceof Error ? error.message : String(error) }, 500);
     }
   };
 }
