@@ -7,6 +7,7 @@ import type {
 } from "./types.js";
 
 export type Clock = () => number;
+export type EventTags = Record<string, string | number | boolean>;
 
 export class History {
   readonly #events: HistoryEvent[] = [];
@@ -33,12 +34,13 @@ export class History {
     return full;
   }
 
-  invoke(operation: OperationRef, value?: unknown): HistoryEvent {
+  invoke(operation: OperationRef, value?: unknown, tags?: EventTags): HistoryEvent {
     return this.append({
       type: "invoke",
       process: operation.process,
       operation,
       value,
+      tags,
     });
   }
 
@@ -47,6 +49,7 @@ export class History {
     type: CompletionType,
     value?: unknown,
     outcome?: OutcomeMetadata,
+    tags?: EventTags,
   ): HistoryEvent {
     return this.append({
       type,
@@ -54,6 +57,7 @@ export class History {
       operation,
       value,
       outcome,
+      tags,
     });
   }
 
@@ -76,12 +80,12 @@ export class History {
     });
   }
 
-  checkpoint(name: string, value?: unknown, process: string | number = "cloudfault"): HistoryEvent {
+  checkpoint(name: string, value?: unknown, process: string | number = "cloudfault", tags?: EventTags): HistoryEvent {
     return this.append({
       type: "checkpoint",
       process,
       value,
-      tags: { name },
+      tags: { name, ...tags },
     });
   }
 
