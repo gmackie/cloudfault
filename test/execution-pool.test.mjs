@@ -19,15 +19,22 @@ test("parallel execution respects concurrency while preserving report order", as
   assert.deepEqual(result.runs.map((run) => run.scenario.id), ["a", "b", "c", "d"]);
 });
 
-test("cost and run budgets prevent new work from being scheduled", async () => {
+test("estimated-cost budget prevents expensive scenarios from being scheduled", async () => {
   const scenarios = [scenario("a", 1), scenario("b", 4), scenario("c", 1)];
   const executed = [];
   const result = await executeScenarioBatch(scenarios, async (item) => {
     executed.push(item.id);
     return { scenario: item, history: [], checks: [{ valid: true, checker: "ok" }] };
-  }, { concurrency: 1, budget: { maxRuns: 2, maxEstimatedCost: 5 } });
+  }, { concurrency: 1, budget: { maxEstimatedCost: 3 } });
   assert.deepEqual(executed, ["a"]);
-  assert.deepEqual(result.skipped.map((item) => [item.scenario.id, item.reason]), [["b", "cost-budget"], ["c", "run-budget"]]);
+  assert.deepEqual(result.skipped.map((item) => [item.scenario.id, item.reason]), [["b", "cost-budget"], ["c", "cost-budget"]]);
+});
+
+test("run budget caps the number of scheduled scenarios", async () => {
+  const scenarios = [scenario("a"), scenario("b"), scenario("c")];
+  const result = await executeScenarioBatch(scenarios, async (item) => ({ scenario: item, history: [], checks: [{ valid: true, checker: "ok" }] }), { concurrency: 1, budget: { maxRuns: 2 } });
+  assert.deepEqual(result.runs.map((run) => run.scenario.id), ["a", "b"]);
+  assert.deepEqual(result.skipped.map((item) => [item.scenario.id, item.reason]), [["c", "run-budget"]]);
 });
 
 test("stopOnFirstFailure stops scheduling later work", async () => {
