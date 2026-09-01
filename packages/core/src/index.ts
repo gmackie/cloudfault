@@ -3,6 +3,7 @@ export * from "./history.js";
 export * from "./checker.js";
 export * from "./search.js";
 export * from "./planner.js";
+export * from "./config.js";
 export * from "./seed.js";
 export * from "./execution-index.js";
 export * from "./controller.js";
