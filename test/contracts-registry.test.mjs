@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { bundledSemanticContracts, providerSemantics, semanticContractsJson } from "../packages/adapters/dist/index.js";
 
-test("bundled semantic contract fixtures are conformant and fingerprinted", () => {
+test("all 25 bundled adapters have conformant fingerprinted semantic contract fixtures", () => {
   const contracts = bundledSemanticContracts();
-  assert.ok(contracts.length >= 12);
+  assert.equal(contracts.length, 25);
   assert.equal(contracts.every((contract) => contract.conformanceValid), true);
   assert.equal(contracts.every((contract) => /^fnv1a32:[0-9a-f]{8}$/.test(contract.fingerprint)), true);
   assert.equal(new Set(contracts.map((contract) => contract.adapter)).size, contracts.length);
