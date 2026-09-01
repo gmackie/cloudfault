@@ -23,17 +23,44 @@ export interface ProviderSemanticsRecord {
   evidence: readonly SemanticsEvidence[];
 }
 
-const STATEFUL = new Set(["stripe"]);
+const CONFORMANT = new Set(["stripe"]);
 
 /**
  * Evidence records are deliberately explicit about their granularity. Most of
  * the bundled V0 adapters are semantic classifiers authored from providers'
  * public contracts, not claims of full endpoint emulation or formal protocol
- * conformance. Stateful/conformance maturity is promoted only when executable
- * coverage exists.
+ * conformance. Conformance is promoted only when the modeled subset has both a
+ * provider-neutral adapter conformance suite and an executable runtime/backend
+ * witness.
  */
 function record(adapter: SemanticAdapter): ProviderSemanticsRecord {
-  const maturity: SemanticsMaturity = STATEFUL.has(adapter.manifest.name) ? "stateful" : "semantic";
+  const conformant = CONFORMANT.has(adapter.manifest.name);
+  const maturity: SemanticsMaturity = conformant ? "conformant" : "semantic";
+  const evidence: SemanticsEvidence[] = [{
+    kind: "provider-contract",
+    source: "provider public API/documentation contract",
+    version: adapter.manifest.contractVersion,
+    checkedAt: "2026-08-31",
+    notes: conformant
+      ? "Modeled subset is additionally covered by adapter conformance and runtime behavioral tests."
+      : "Semantic classifier/fault-space coverage; not a complete provider emulator.",
+  }];
+  if (conformant) {
+    evidence.push(
+      {
+        kind: "behavioral-test",
+        source: "test/stripe-conformance.test.mjs",
+        checkedAt: "2026-08-31",
+        notes: "Deterministic operation classification, retry/idempotency semantics, and fault-space contract checks.",
+      },
+      {
+        kind: "behavioral-test",
+        source: "examples/outbound-stripe-vitest/test/stripe.test.js",
+        checkedAt: "2026-08-31",
+        notes: "Workers-runtime ambiguous commit and stable Idempotency-Key behavior backed by StripeMemoryBackend through @msw/cloudflare.",
+      },
+    );
+  }
   return {
     adapter: adapter.manifest.name,
     provider: adapter.manifest.provider,
@@ -43,15 +70,7 @@ function record(adapter: SemanticAdapter): ProviderSemanticsRecord {
     capabilities: adapter.manifest.capabilities,
     hosts: adapter.manifest.hosts,
     unofficial: adapter.manifest.unofficial ?? true,
-    evidence: [{
-      kind: "provider-contract",
-      source: "provider public API/documentation contract",
-      version: adapter.manifest.contractVersion,
-      checkedAt: "2026-08-31",
-      notes: maturity === "stateful"
-        ? "Semantic classifier plus executable stateful test backend for the covered subset."
-        : "Semantic classifier/fault-space coverage; not a complete provider emulator.",
-    }],
+    evidence,
   };
 }
 
