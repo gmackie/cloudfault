@@ -1,5 +1,6 @@
 import { checksFailed } from "./checker.js";
 import { pairwiseScenarios } from "./covering.js";
+import { CoverageGuidance, coverageGuidedScenarios, type GuidedScenarioOptions } from "./guided.js";
 import { guidedScenarios, type GuidedSearchOptions } from "./guidance.js";
 import { incidentScenario, type IncidentProfile } from "./incidents.js";
 import { enumerateScenarios, minimizeFailureSet, type ExploreOptions } from "./search.js";
@@ -10,7 +11,7 @@ import type {
   Scenario,
 } from "./types.js";
 
-export type SearchStrategy = "exhaustive" | "pairwise" | "guided" | "incidents" | "hybrid";
+export type SearchStrategy = "exhaustive" | "pairwise" | "guided" | "coverage-guided" | "incidents" | "hybrid";
 
 export interface ScenarioPlanOptions extends ExploreOptions {
   strategy?: SearchStrategy;
@@ -18,6 +19,7 @@ export interface ScenarioPlanOptions extends ExploreOptions {
   previousRuns?: readonly RunResult[];
   incidents?: readonly IncidentProfile[];
   guided?: GuidedSearchOptions;
+  coverageGuided?: GuidedScenarioOptions;
 }
 
 export interface ScenarioPlan {
@@ -36,7 +38,6 @@ function deduplicateScenarios(scenarios: readonly Scenario[]): readonly Scenario
   const output: Scenario[] = [];
   for (const scenario of scenarios) {
     const signature = [...scenario.perturbations].map((item) => item.id).sort().join("|");
-    // The baseline is executed separately by executeScenarioPlan().
     if (!signature || seen.has(signature)) continue;
     seen.add(signature);
     output.push(scenario);
@@ -50,8 +51,8 @@ function limitScenarios(scenarios: readonly Scenario[], maxScenarios?: number): 
 
 /**
  * Build a deterministic scenario plan without coupling planning to execution.
- * This lets CI print/inspect a plan, agents optimize it, and local/staging
- * backends execute exactly the same ordered scenario list.
+ * CI can print/inspect a plan, an optimizer can reorder it, and local/staging
+ * backends can execute exactly the same ordered scenario list.
  */
 export function planScenarios(
   points: readonly FaultPoint[],
@@ -81,6 +82,17 @@ export function planScenarios(
       complexityPenalty: options.guided?.complexityPenalty,
     },
   );
+  const coverageGuided = () => {
+    const guidance = new CoverageGuidance();
+    for (const run of options.previousRuns ?? []) guidance.observe(run);
+    return coverageGuidedScenarios(points, guidance, {
+      maxDepth: options.coverageGuided?.maxDepth ?? options.maxDepth ?? 3,
+      maxCandidates: options.coverageGuided?.maxCandidates,
+      maxScenarios: options.coverageGuided?.maxScenarios ?? options.maxScenarios,
+      seed,
+      includePreviouslyExecuted: options.coverageGuided?.includePreviouslyExecuted,
+    });
+  };
   const incidents = () => (options.incidents ?? []).map((incident) =>
     incidentScenario(incident, { seed, metadata: { strategy: "incidents" } }),
   );
@@ -90,15 +102,14 @@ export function planScenarios(
     case "exhaustive": scenarios = exhaustive(); break;
     case "pairwise": scenarios = pairwise(); break;
     case "guided": scenarios = guided(); break;
+    case "coverage-guided": scenarios = coverageGuided(); break;
     case "incidents": scenarios = incidents(); break;
     case "hybrid":
-      // Hybrid keeps the cheap/high-signal tiers first: depth-1 exhaustive,
-      // then curated correlated incidents, then pairwise interaction coverage,
-      // then feedback-guided candidates not already represented.
       scenarios = [
         ...enumerateScenarios(points, { maxDepth: 1, includeEmpty: false }),
         ...incidents(),
         ...pairwise(),
+        ...coverageGuided(),
         ...guided(),
       ];
       break;
