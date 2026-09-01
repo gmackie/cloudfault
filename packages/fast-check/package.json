@@ -12,6 +12,10 @@
     "./shrink": {
       "types": "./dist/shrink.d.ts",
       "import": "./dist/shrink.js"
+    },
+    "./model-shrink": {
+      "types": "./dist/model-shrink.d.ts",
+      "import": "./dist/model-shrink.js"
     }
   },
   "dependencies": {
