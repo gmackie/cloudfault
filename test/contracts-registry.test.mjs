@@ -1,12 +1,29 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { bundledSemanticContracts, providerSemantics, semanticContractsJson } from "../packages/adapters/dist/index.js";
+import { runAdapterConformance } from "../packages/adapter-sdk/dist/conformance.js";
+import {
+  bundledContractFixtures,
+  bundledSemanticContracts,
+  providerSemantics,
+  semanticAdapter,
+  semanticContractsJson,
+} from "../packages/adapters/dist/index.js";
 
 test("all 25 bundled adapters have conformant fingerprinted semantic contract fixtures", () => {
   const contracts = bundledSemanticContracts();
   assert.equal(contracts.length, 25);
-  assert.equal(contracts.every((contract) => contract.conformanceValid), true);
+  const invalid = bundledContractFixtures.flatMap(({ adapter: name, cases }) => {
+    const adapter = semanticAdapter(name);
+    if (!adapter) return [{ adapter: name, failures: ["missing adapter"] }];
+    const result = runAdapterConformance(adapter, cases);
+    if (result.valid) return [];
+    return [{
+      adapter: name,
+      failures: result.checks.filter((check) => !check.valid).map((check) => `${check.case}: ${check.message ?? "failed"}`),
+    }];
+  });
+  assert.deepEqual(invalid, []);
   assert.equal(contracts.every((contract) => /^fnv1a32:[0-9a-f]{8}$/.test(contract.fingerprint)), true);
   assert.equal(new Set(contracts.map((contract) => contract.adapter)).size, contracts.length);
 });
