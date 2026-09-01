@@ -12,27 +12,23 @@ async function run(perturbations) {
   const server = createTestHarness({ workers: [{ configPath }] });
   await server.listen();
   try {
-    // Workflow modifiers reload Miniflare. Any WorkerHandle/introspector obtained
-    // before modifyAll() becomes poisoned, so the first introspector is control-
-    // plane-only: configure it, then discard it without calling it again.
-    const initialWorker = server.getWorker("cloudfault-workflow-retry");
-    const initialWorkflow = await initialWorker.introspectWorkflow("ORDER_FLOW");
-    await applyWorkflowScenario(initialWorkflow, { perturbations }, {
-      target: "ORDER_FLOW",
-      disableRetryDelays: true,
-    });
-
-    // Dispatch through the TestHarness so we do not retain a pre-reload Worker
-    // stub. After the instance starts, reacquire both the Worker and Workflow
-    // introspector from the current Miniflare generation before inspecting it.
-    const response = await server.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
-    assert.equal(response.status, 200);
-    const started = await response.json();
-    assert.equal(started.orderId, "812");
-
-    const inspectionWorker = server.getWorker("cloudfault-workflow-retry");
-    const workflow = await inspectionWorker.introspectWorkflow("ORDER_FLOW");
+    // Cloudflare's Workflow introspector is the control-plane session and is
+    // intentionally valid across modifyAll(). The Worker runtime handle used to
+    // create it may be invalidated by the Miniflare reload, so dispatch through
+    // server.fetch() afterwards rather than retaining that WorkerHandle.
+    const worker = server.getWorker("cloudfault-workflow-retry");
+    const workflow = await worker.introspectWorkflow("ORDER_FLOW");
     try {
+      await applyWorkflowScenario(workflow, { perturbations }, {
+        target: "ORDER_FLOW",
+        disableRetryDelays: true,
+      });
+
+      const response = await server.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
+      assert.equal(response.status, 200);
+      const started = await response.json();
+      assert.equal(started.orderId, "812");
+
       const instances = await workflow.get();
       assert.equal(instances.length, 1);
       const [instance] = instances;
