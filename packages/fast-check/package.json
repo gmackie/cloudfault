@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./shrink": {
+      "types": "./dist/shrink.d.ts",
+      "import": "./dist/shrink.js"
     }
   },
   "dependencies": {
