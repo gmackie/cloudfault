@@ -28,3 +28,4 @@ export * from "./guidance-store.js";
 export * from "./execution-pool.js";
 export * from "./remote-agent.js";
 export * from "./negotiated-remote.js";
+export * from "./secure-remote.js";
