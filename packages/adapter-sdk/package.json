@@ -17,6 +17,14 @@
       "types": "./dist/conformance.d.ts",
       "import": "./dist/conformance.js"
     },
+    "./contracts": {
+      "types": "./dist/contracts.d.ts",
+      "import": "./dist/contracts.js"
+    },
+    "./signers": {
+      "types": "./dist/signers.d.ts",
+      "import": "./dist/signers.js"
+    },
     "./emulate": {
       "types": "./dist/emulate.d.ts",
       "import": "./dist/emulate.js"
