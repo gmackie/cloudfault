@@ -1,5 +1,7 @@
 import { createFailureArtifact } from "./artifact.js";
 import { checksFailed } from "./checker.js";
+import type { ScenarioBudget } from "./execution-pool.js";
+import type { GuidedScenarioOptions } from "./guided.js";
 import type { GuidedSearchOptions } from "./guidance.js";
 import type { IncidentProfile } from "./incidents.js";
 import { exploreWithStrategy, type SearchStrategy } from "./planner.js";
@@ -23,9 +25,12 @@ export interface CloudFaultConfig<State = unknown> {
   seed?: number;
   stopOnFirstFailure?: boolean;
   minimizeFailure?: boolean;
+  concurrency?: number;
+  budget?: ScenarioBudget;
   incidents?: readonly IncidentProfile[];
   previousRuns?: readonly RunResult[];
   guided?: GuidedSearchOptions;
+  coverageGuided?: GuidedScenarioOptions;
   replay?: ReplayDescriptor;
   metadata?: Record<string, unknown>;
 }
@@ -47,6 +52,9 @@ export async function runCloudFault<State>(
     incidents?: readonly IncidentProfile[];
     previousRuns?: readonly RunResult[];
     guided?: GuidedSearchOptions;
+    coverageGuided?: GuidedScenarioOptions;
+    concurrency?: number;
+    budget?: ScenarioBudget;
   } = {},
 ): Promise<RunCloudFaultResult<State>> {
   const exploration = await exploreWithStrategy(config.faultPoints, config.execute, {
@@ -56,9 +64,12 @@ export async function runCloudFault<State>(
     stopOnFirstFailure: overrides.stopOnFirstFailure ?? config.stopOnFirstFailure ?? true,
     minimizeFailure: overrides.minimizeFailure ?? config.minimizeFailure ?? true,
     seed: overrides.seed ?? config.seed,
+    concurrency: overrides.concurrency ?? config.concurrency,
+    budget: overrides.budget ?? config.budget,
     incidents: overrides.incidents ?? config.incidents,
     previousRuns: overrides.previousRuns ?? config.previousRuns,
     guided: overrides.guided ?? config.guided,
+    coverageGuided: overrides.coverageGuided ?? config.coverageGuided,
   });
 
   if (!exploration.firstFailure || !checksFailed(exploration.firstFailure.checks)) {
@@ -78,6 +89,9 @@ export async function runCloudFault<State>(
         plannedScenarios: exploration.plan.scenarios.length,
         minimizationAttempts: exploration.minimizationAttempts,
         exploredRuns: exploration.runs.length,
+        skippedScenarios: exploration.execution.skipped.length,
+        estimatedCost: exploration.execution.estimatedCost,
+        executionConcurrency: exploration.execution.concurrency,
       },
     }),
   };
