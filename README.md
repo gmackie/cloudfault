@@ -2,65 +2,70 @@
 
 **Jepsen-lite for Cloudflare Workers.**
 
-CloudFault systematically tests whether a Worker application remains logically correct when:
+CloudFault systematically tests whether a Worker application remains logically correct when Cloudflare primitives, external APIs, retries, concurrency, stale observations, duplicate delivery, backend degradation, and ambiguous side effects interact.
 
-- Cloudflare behaves according to its documented distributed-system semantics;
-- Cloudflare backends are temporarily degraded;
-- external APIs rate-limit, fail, or return an **indeterminate** result after a side effect may already have committed; and
-- retries, concurrency, duplicate delivery, stale state, and partial failure interact.
+It is not a random “make 5% of requests fail” chaos library. CloudFault builds logical histories, explores bounded and coverage-guided perturbation combinations, checks business invariants, and reduces failures into two independent witnesses:
 
-CloudFault is not a random "make 5% of requests fail" chaos library. It builds logical histories, checks application invariants, explores bounded combinations of perturbations, and reduces failures to a **Minimal Failure Set**.
+1. the **Minimal Failure Set** — the smallest set of perturbations required to reproduce the bug; and
+2. the **minimal workload** — the smallest client/event sequence that still exposes it.
 
 ```text
-legal KV stale read
+legal stale observer state
         +
-Stripe commit -> response lost
+payment provider commits -> response lost
         +
-application retry with a new idempotency key
+application retry
         =
-duplicate payment
+duplicate financial effect
 ```
 
-The important outcome model is:
+The outcome model is deliberately three-valued:
 
 ```text
 SUCCESS | DEFINITE FAILURE | INDETERMINATE
 ```
 
-An indeterminate result means the caller cannot know whether an operation took effect. CloudFault preserves this as a Jepsen-style `info` completion and, when an emulator or test double has privileged knowledge, separately records the actual outcome.
+An indeterminate operation becomes a Jepsen-style `info` completion. When a stateful emulator/test backend has privileged knowledge, CloudFault records the provider’s actual outcome separately from what the application observed.
 
-## Status
+## Current status
 
-CloudFault is an early implementation, but the main architecture is executable rather than aspirational:
+CloudFault is an experimental but executable framework. The repository currently includes:
 
-- Jepsen-style operation histories and `ok` / `fail` / `info` outcomes;
-- stable context-relative execution indexes and occurrence selectors;
-- systematic depth-bounded perturbation exploration;
-- 1-minimal failure-set reduction;
-- replayable JSON failure artifacts and timeline rendering;
-- Cloudflare KV eventual-consistency observer models;
-- Queue duplicate/rebatch semantics and direct Miniflare queue dispatch;
-- D1 replica/session semantics and transient-degradation models;
-- Durable Object, Workflow, Scheduled, R2, and Service Binding perturbation primitives;
-- Wrangler `createTestHarness()` integration and JSRPC-controlled Nemesis Workers;
-- MSW-backed outbound provider interception;
-- a stateful Stripe backend used for outcome-ambiguity testing;
-- a public semantic adapter/plugin SDK;
-- **25 bundled unofficial API adapters**; and
-- source + Wrangler topology inspection from the CLI.
+- Jepsen-style `invoke` / `ok` / `fail` / `info` histories;
+- parent/child operation lineage and context-relative execution indexing;
+- systematic depth-N, pairwise, feedback-guided, **coverage-guided**, incident, and hybrid search;
+- lineage-driven fault-space discovery from calls actually reached by executions;
+- persistent scenario-result caching;
+- 1-minimal fault-set reduction;
+- independent workload delta-debugging and combined counterexample shrinking;
+- synchronous invariants, state-machine checking, cardinality/idempotency checks, convergence polling, conservation, uniqueness, monotonicity, implication, and orphan detection;
+- causal failure graphs and witness extraction;
+- JSON, JUnit, GitHub Actions, text timeline, and HTML reports;
+- portable local/remote execution backends and a versioned remote-agent protocol;
+- Cloudflare KV, D1, R2, Queue, Durable Object, Workflow, Scheduled, Service Binding, and observer-region semantics;
+- shape-preserving D1 and R2 degradation proxies, including committed-write/lost-response ambiguity;
+- direct Miniflare Queue/Scheduled lifecycle control including retries and DLQ transitions;
+- real workerd/Vitest/Miniflare integration fixtures;
+- a public semantic provider adapter/plugin SDK;
+- adapter conformance/maturity checks and versioned semantic-contract snapshots;
+- stateful Stripe ambiguity testing;
+- shared webhook, OAuth, streaming, async-job, and rate-limit capability models;
+- provider-shaped signed webhook helpers;
+- **25 bundled unofficial provider adapters** with capability-aware semantic overlays; and
+- project discovery, `init`, `doctor`, planning, recommendations, semantic registry output, replay, and reporting from the CLI.
 
-The bundled adapters model operations and failure semantics. They do **not** claim to be full provider emulators. A provider adapter can proxy a real sandbox/test API, sit over a stateful emulator such as `emulate`, or use a purpose-built in-memory backend like the included Stripe fixture.
+Bundled adapters model a useful semantic subset. They do **not** claim to be complete provider emulators. An adapter can use synthetic responses, proxy a real sandbox/test API, sit over a stateful emulator such as `emulate`, or use a purpose-built backend such as the included Stripe fixture.
 
 ## Packages
 
 ```text
-@cloudfault/core          histories, controllers, checkers, search, MFS, artifacts, workloads
-@cloudfault/adapter-sdk   public provider semantic adapter/plugin API + fault runtime
-@cloudfault/cloudflare    Cloudflare semantics, nemesis shims, test harness/MSW/Miniflare bridges
+@cloudfault/core          history, lineage, search, MFS, oracles, diagnostics, reports, backends
+@cloudfault/adapter-sdk   semantic adapter API, capability packs, conformance, contracts, signers
+@cloudfault/cloudflare    Cloudflare semantics and workerd/Miniflare/MSW runtime bridges
 @cloudfault/stripe        Stripe semantic adapter + stateful in-memory payment backend
-@cloudfault/adapters      bundled unofficial top-25 provider semantic adapters
-@cloudfault/fast-check    optional property-testing/fuzz bridge
-@cloudfault/cli           run/replay/timeline/inspect/adapters/init/demo commands
+@cloudfault/adapters      bundled unofficial provider catalog + executable semantic overlays
+@cloudfault/fast-check    property-testing bridge + workload/counterexample shrinking
+@cloudfault/cli           developer CLI
 ```
 
 ## Development
@@ -71,33 +76,62 @@ npm test
 npm run demo
 ```
 
-Unit tests do not require workerd. Integration tests use Wrangler's `createTestHarness()` and therefore execute the example Workers under Cloudflare's local runtime stack.
+The CI suite intentionally includes real runtime fixtures against the currently pinned Wrangler/workerd stack so Cloudflare testing-runtime drift is caught rather than hidden behind unit mocks.
 
 ## CLI
 
 ```bash
-# inspect Worker bindings and known external API usage
+# inspect bindings + provider usage and recommend correctness tests
 npm run cloudfault -- inspect ./wrangler.jsonc ./src
 
-# list bundled unofficial semantic adapters
-npm run cloudfault -- adapters
-
-# create a starter test config
+# generate a project-aware starter config
 npm run cloudfault -- init
 
-# explore a config and write a failure artifact
+# verify dependencies, topology, and semantic coverage
+npm run cloudfault -- doctor
+
+# print a scenario plan without executing it
+npm run cloudfault -- plan ./cloudfault.config.mjs
+
+# execute the configured systematic search
 npm run cloudfault -- run ./cloudfault.config.mjs
 
-# replay the minimized perturbation set
-npm run cloudfault -- replay ./.cloudfault/failures/<failure>.json
+# replay a minimized failure
+npm run cloudfault -- replay .cloudfault/failures/<failure>.json
 
 # render a saved history
-npm run cloudfault -- timeline ./.cloudfault/failures/<failure>.json
+npm run cloudfault -- timeline .cloudfault/failures/<failure>.json
+
+# inspect bundled provider support
+npm run cloudfault -- adapters
+npm run cloudfault -- lifecycle stripe
+
+# emit versioned executable semantics artifacts
+npm run cloudfault -- semantics .cloudfault/provider-semantics.json
+npm run cloudfault -- contracts .cloudfault/semantic-contracts.json
+npm run cloudfault -- contract shopify
 ```
 
-## A CloudFault test
+## Search strategies
 
-A test defines **fault points** and an application-specific execution function. CloudFault handles scenario enumeration, checking, and minimization.
+A normal config can choose:
+
+```js
+export default {
+  strategy: "coverage-guided", // exhaustive | pairwise | guided | coverage-guided | incidents | hybrid
+  maxDepth: 3,
+  maxScenarios: 250,
+  previousRuns,
+  faultPoints,
+  execute,
+};
+```
+
+`coverage-guided` scores candidate scenarios using what previous histories already exercised. Unseen perturbations and unseen perturbation pairs are preferred; failure-associated perturbations receive a smaller exploitation bonus. `hybrid` layers cheap depth-1 cases, curated correlated incidents, pairwise coverage, coverage-guided candidates, and feedback-guided candidates.
+
+For adaptive callers that want to update guidance after every execution, `@cloudfault/core` also exposes `CoverageGuidance`, `coverageGuidedScenarios()`, and `exploreCoverageGuided()` directly.
+
+## A CloudFault test
 
 ```js
 import { defineCloudFault, invariant, runCheckers } from "@cloudfault/core";
@@ -105,6 +139,7 @@ import { staleKvRead, serviceTimeout } from "@cloudfault/cloudflare";
 
 export const cloudfault = defineCloudFault({
   name: "checkout-correctness",
+  strategy: "hybrid",
   maxDepth: 2,
 
   faultPoints: [
@@ -125,102 +160,149 @@ export const cloudfault = defineCloudFault({
   ],
 
   async execute(scenario) {
-    // Start/seed the real Worker harness, configure Nemesis Workers from
-    // scenario.perturbations, exercise the workload, and return the logical
-    // history + business-state checks.
+    // Configure the real Worker/runtime boundary for scenario.perturbations,
+    // exercise the workload, inspect privileged state, and return history/checks.
   },
 });
 ```
 
-The test oracle is deliberately **not** just the HTTP status. Useful checkers look like:
+The oracle is the application’s logical state, not the top-level HTTP status:
 
 ```text
 at-most-one-charge(order)
 fulfilled => paid
 one-fulfillment-per-order
+no-orphan-object-metadata
+total-ledger-balance-conserved
+versions-never-regress
 eventually(all-paid-orders-converge)
 ```
 
-## Real Worker interception paths
+## Runtime interception
 
-CloudFault uses the least invasive interception layer that matches the dependency:
+CloudFault deliberately uses several interception layers rather than pretending one shim can impersonate every Workers binding:
 
 ```text
-                         Worker under workerd
+                           application Worker
                                   |
               +-------------------+-------------------+
-              |                                       |
-      Cloudflare / services                      public APIs
-              |                                       |
-     bindingOverrides + JSRPC                      MSW node
-       auxiliary Nemesis Worker                        |
-              |                               semantic adapter runtime
-              |                                       |
-     real local dependency                    emulator / sandbox / proxy
+              |                   |                   |
+       service bindings      native storage        public APIs
+              |                   |                   |
+      auxiliary Worker       shape-preserving      MSW / proxy
+      fetch boundaries       D1/R2 wrappers             |
+              |                   |              semantic adapter
+       local dependency      local D1/R2/etc.        backend
 ```
 
-For Queue and Scheduled event dispatch where the high-level harness is not enough, `@cloudfault/cloudflare` also exposes an optional direct-Miniflare bridge. Cloudflare recommends the higher-level testing APIs for normal tests and Miniflare directly for lower-level simulator control.
+For Queue and Scheduled lifecycle testing, the lower-level Miniflare bridge can dispatch and transform events directly. Durable Object and Workflow fixtures use the Workers testing facilities appropriate to those primitives.
 
-### D1 boundary
+Control-plane configuration is kept separate from production application behavior. Test helpers configure Nemesis Workers through private control routes while the application continues to use ordinary Worker/service interfaces.
 
-CloudFault models D1 failure/replica semantics, but it does **not** currently pretend that a Service Binding test Worker is a transparent D1 replacement. The D1 API's synchronous statement-builder surface (`prepare().bind()...`) is not the same shape as JSRPC. Real D1 storage continues to use the harness/local D1 binding; deeper transparent D1 fault injection requires a separate low-level interception strategy.
+## Cloud semantics vs degradation
 
-## Cloud semantics versus faults
-
-CloudFault keeps two dimensions separate:
+CloudFault keeps **legal distributed behavior** separate from **provider degradation**.
 
 ```text
-LEGAL SEMANTICS                         DEGRADATION
----------------                         -----------
-KV stale observer state                 D1 network/storage errors
-KV stale negative lookup                R2 transient 5xx/capacity pressure
-Queue duplicate delivery                Service Binding timeout/unavailability
-Queue rebatching                         external API 429/5xx/disconnect
-D1 replica/session visibility            provider commit -> lost response
-Scheduled duplicate/delay
+LEGAL / CONTRACT SEMANTICS               DEGRADATION / FAILURE
+--------------------------               ---------------------
+KV observer lag                          D1 transient backend errors
+KV stale negative observations           D1 committed-write response loss
+Queue duplicate delivery                 R2 transient capacity errors
+Queue rebatching                         R2 committed-write response loss
+D1 session/replica visibility            Service Binding timeout/unavailability
+Workflow/DO retry behavior               public API 429/5xx/disconnect
+Scheduled duplicate/delay                provider commit -> lost response
 ```
 
-The search engine composes these with workload ordering. A stale read is not labeled "Cloudflare broke"; it is a legal state the application must tolerate if it relies on that primitive.
+A stale KV observation is not labeled “Cloudflare broke.” The question is whether the application remains correct while using the consistency model it selected.
 
-## Provider adapters
+`@cloudfault/cloudflare` also includes observer traces/checkers for:
 
-The adapter SDK classifies requests into semantic operations rather than endpoint strings:
+- future/impossible reads;
+- monotonic observer reads;
+- read-your-writes expectations;
+- sequential session bookmarks; and
+- cross-observer version divergence.
 
-```ts
-{
-  name: "payment_intent.create",
-  effect: "external-side-effect",
-  retry: "conditional",
-  idempotencyKey: "order-812"
-}
+Logical region profiles are test models, not claims to reproduce Cloudflare’s physical POP topology.
+
+## Provider semantics
+
+Generic HTTP sabotage is the floor, not the goal. `semanticFirstPartyAdapters` overlays provider/capability-specific behavior on the bundled catalog. Examples include:
+
+- Anthropic overload responses;
+- GitHub secondary rate-limit behavior;
+- Slack Web API HTTP-200 application errors;
+- Shopify GraphQL HTTP-200 error/throttle payloads;
+- streaming interruption for streaming providers;
+- OAuth token expiry/revocation for OAuth-backed providers;
+- regional-unavailability cases for regional cloud APIs; and
+- webhook / asynchronous-job lifecycle perturbations independent of one request/response.
+
+Adapter semantics are versionable executable artifacts:
+
+```bash
+cloudfault contracts semantic-contracts.json
+cloudfault contract stripe
+cloudfault semantics provider-registry.json
 ```
 
-Generic reusable faults include:
+Breaking changes to a semantic contract can be detected separately from additive fault coverage. The registry records maturity/evidence so “semantic classifier” is not confused with “complete emulator.”
 
-```ts
-rejectBeforeCommit(...)
-timeoutBeforeSend(...)
-commitThenTimeout(...)
-commitThenDisconnect(...)
-rateLimit(...)
-httpError(...)
-latency(...)
-malformedJson(...)
+## Causal failure reports
+
+Failure reports now combine:
+
+```text
+checker failures
+      +
+Minimal Failure Set
+      +
+indeterminate outcomes
+      +
+operation lineage
+      +
+process/resource ordering
+      +
+retry edges
+      =
+causal witness
 ```
 
-Community adapters can use `defineRulesAdapter()` for a compact declarative implementation or implement `SemanticAdapter` directly. See [Adapter Authoring](docs/adapter-authoring.md).
+The HTML report includes the causal edge set, indeterminate operations with actual vs observed outcome, dependency coverage, MFS, history table, and text timeline.
 
-The bundled unofficial catalog currently includes Stripe, GitHub, OpenAI, Anthropic, Slack, Google Workspace APIs, Microsoft Graph, AWS, Twilio, SendGrid, Resend, PayPal, Shopify, Clerk, Auth0, WorkOS, Okta, Supabase, Firebase, MongoDB Atlas, Vercel, Linear, Discord, Cloudinary, and Algolia.
+## Remote/staging execution
+
+Search is runtime-agnostic. `FunctionExecutionBackend` runs locally; `RemoteHttpBackend` sends the same `Scenario` to a remote endpoint. `createRemoteExecutionHandler()` implements the versioned `cloudfault.remote-execution` protocol and exposes an optional capabilities document.
+
+That lets the same planner/search/checker stack target a local workerd fixture, a staging proxy, or another controlled runner without changing the scenario model.
+
+## Counterexample shrinking
+
+Fault-set and workload minimization are intentionally distinct:
+
+```js
+const result = await shrinkCounterexample(
+  perturbations,
+  workload,
+  ({ perturbations, workload }) => reproducesBug(perturbations, workload),
+);
+```
+
+CloudFault alternates MFS reduction and sequence delta-debugging until neither witness becomes smaller. The result answers both “which failures matter?” and “what is the smallest workload that exposes them?”
 
 ## Principles
 
-1. **Correctness, not merely uptime.** A request can return 200 and still leave impossible state.
-2. **Legal semantics are not faults.** Eventual consistency and at-least-once delivery are modeled as valid behavior.
-3. **Indeterminate outcomes are first-class.** "Maybe committed" is different from failure.
-4. **Systematic before random.** Bounded exploration is the correctness mode; probabilistic fuzzing is complementary.
-5. **Minimize the witness.** Reduce the fault set and, with property testing, the workload too.
-6. **Provider semantics belong in adapters.** Generic HTTP sabotage cannot express business-side commit boundaries.
-7. **Keep production code production-shaped.** Prefer binding overrides, MSW, and runtime control over test branches in application code.
-8. **Do not fork workerd.** Build above Cloudflare-maintained execution wherever possible.
+1. **Correctness, not merely uptime.** A 200 response can still leave impossible state.
+2. **Legal semantics are not faults.** Consistency and delivery contracts are modeled explicitly.
+3. **Indeterminate outcomes are first-class.** “Maybe committed” is different from failure.
+4. **Systematic before random.** Random fuzzing complements bounded correctness search.
+5. **Search the interactions.** Multi-fault combinations matter more than isolated failure injection.
+6. **Minimize both witnesses.** Reduce the failure set and the workload independently.
+7. **Provider semantics belong in adapters.** Business-side commit boundaries are not generic HTTP behavior.
+8. **Evidence matters.** Provider semantics have maturity and contract-evidence metadata.
+9. **Keep production code production-shaped.** Prefer runtime boundaries over application test branches.
+10. **Do not fork workerd.** Build above Cloudflare-maintained execution wherever possible.
 
 See [Architecture](docs/architecture.md), [Adapter Authoring](docs/adapter-authoring.md), [Provider Support](docs/provider-support.md), [Research](docs/research.md), and [Roadmap](ROADMAP.md).
