@@ -1,5 +1,5 @@
 import type { SemanticAdapter } from "@cloudfault/adapter-sdk";
-import { firstPartyAdapters } from "./catalog.js";
+import { semanticFirstPartyAdapters } from "./semantics.js";
 
 export type SemanticsMaturity = "classifier" | "semantic" | "stateful" | "conformant";
 
@@ -25,13 +25,21 @@ export interface ProviderSemanticsRecord {
 
 const CONFORMANT = new Set(["stripe"]);
 
+function normalizedCapabilities(adapter: SemanticAdapter): readonly string[] {
+  const capabilities = new Set(adapter.manifest.capabilities);
+  // Firestore reads are strongly consistent by default. Keep explicit stale-read
+  // testing opt-in rather than presenting eventual observation as the default contract.
+  if (adapter.manifest.name === "firebase") {
+    capabilities.delete("eventual-observation");
+    capabilities.add("strong-consistency");
+  }
+  return [...capabilities].sort();
+}
+
 /**
  * Evidence records are deliberately explicit about their granularity. Most of
- * the bundled V0 adapters are semantic classifiers authored from providers'
- * public contracts, not claims of full endpoint emulation or formal protocol
- * conformance. Conformance is promoted only when the modeled subset has both a
- * provider-neutral adapter conformance suite and an executable runtime/backend
- * witness.
+ * the bundled adapters are semantic classifiers authored from public provider
+ * contracts, not claims of full endpoint emulation or formal conformance.
  */
 function record(adapter: SemanticAdapter): ProviderSemanticsRecord {
   const conformant = CONFORMANT.has(adapter.manifest.name);
@@ -40,7 +48,7 @@ function record(adapter: SemanticAdapter): ProviderSemanticsRecord {
     kind: "provider-contract",
     source: "provider public API/documentation contract",
     version: adapter.manifest.contractVersion,
-    checkedAt: "2026-08-31",
+    checkedAt: "2026-09-01",
     notes: conformant
       ? "Modeled subset is additionally covered by adapter conformance and runtime behavioral tests."
       : "Semantic classifier/fault-space coverage; not a complete provider emulator.",
@@ -50,13 +58,13 @@ function record(adapter: SemanticAdapter): ProviderSemanticsRecord {
       {
         kind: "behavioral-test",
         source: "test/stripe-conformance.test.mjs",
-        checkedAt: "2026-08-31",
+        checkedAt: "2026-09-01",
         notes: "Deterministic operation classification, retry/idempotency semantics, and fault-space contract checks.",
       },
       {
         kind: "behavioral-test",
         source: "examples/outbound-stripe-vitest/test/stripe.test.js",
-        checkedAt: "2026-08-31",
+        checkedAt: "2026-09-01",
         notes: "Workers-runtime ambiguous commit and stable Idempotency-Key behavior backed by StripeMemoryBackend through @msw/cloudflare.",
       },
     );
@@ -67,14 +75,14 @@ function record(adapter: SemanticAdapter): ProviderSemanticsRecord {
     adapterVersion: adapter.manifest.version,
     contractVersion: adapter.manifest.contractVersion,
     maturity,
-    capabilities: adapter.manifest.capabilities,
+    capabilities: normalizedCapabilities(adapter),
     hosts: adapter.manifest.hosts,
     unofficial: adapter.manifest.unofficial ?? true,
     evidence,
   };
 }
 
-export const providerSemanticsRegistry: readonly ProviderSemanticsRecord[] = firstPartyAdapters.map(record);
+export const providerSemanticsRegistry: readonly ProviderSemanticsRecord[] = semanticFirstPartyAdapters.map(record);
 
 export function providerSemantics(name: string): ProviderSemanticsRecord | undefined {
   return providerSemanticsRegistry.find((item) => item.adapter === name);
@@ -88,7 +96,7 @@ export function semanticsRegistryJson(): string {
   return `${JSON.stringify({
     schema: "cloudfault.provider-semantics-registry",
     version: 1,
-    generatedAt: "2026-08-31",
+    generatedAt: "2026-09-01",
     providers: providerSemanticsRegistry,
   }, null, 2)}\n`;
 }
