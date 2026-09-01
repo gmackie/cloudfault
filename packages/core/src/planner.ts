@@ -1,15 +1,11 @@
 import { checksFailed } from "./checker.js";
 import { pairwiseScenarios } from "./covering.js";
+import { executeScenarioBatch, type ScenarioBudget, type ScenarioCostEstimator, type SkippedScenario } from "./execution-pool.js";
 import { CoverageGuidance, coverageGuidedScenarios, type GuidedScenarioOptions } from "./guided.js";
 import { guidedScenarios, type GuidedSearchOptions } from "./guidance.js";
 import { incidentScenario, type IncidentProfile } from "./incidents.js";
 import { enumerateScenarios, minimizeFailureSet, type ExploreOptions } from "./search.js";
-import type {
-  ExplorationResult,
-  FaultPoint,
-  RunResult,
-  Scenario,
-} from "./types.js";
+import type { ExplorationResult, FaultPoint, RunResult, Scenario } from "./types.js";
 
 export type SearchStrategy = "exhaustive" | "pairwise" | "guided" | "coverage-guided" | "incidents" | "hybrid";
 
@@ -49,15 +45,7 @@ function limitScenarios(scenarios: readonly Scenario[], maxScenarios?: number): 
   return Number.isFinite(maxScenarios) ? scenarios.slice(0, maxScenarios) : scenarios;
 }
 
-/**
- * Build a deterministic scenario plan without coupling planning to execution.
- * CI can print/inspect a plan, an optimizer can reorder it, and local/staging
- * backends can execute exactly the same ordered scenario list.
- */
-export function planScenarios(
-  points: readonly FaultPoint[],
-  options: ScenarioPlanOptions = {},
-): ScenarioPlan {
+export function planScenarios(points: readonly FaultPoint[], options: ScenarioPlanOptions = {}): ScenarioPlan {
   const strategy = options.strategy ?? "exhaustive";
   const seed = options.seed;
   const exhaustive = () => enumerateScenarios(points, {
@@ -65,23 +53,15 @@ export function planScenarios(
     maxScenarios: options.maxScenarios,
     includeEmpty: false,
   }).map((scenario) => ({ ...scenario, seed, metadata: { ...scenario.metadata, strategy: "exhaustive" } }));
-  const pairwise = () => pairwiseScenarios(points, {
-    includeBaseline: false,
+  const pairwise = () => pairwiseScenarios(points, { includeBaseline: false, seed, maxScenarios: options.maxScenarios });
+  const guided = () => guidedScenarios(points, options.previousRuns ?? [], {
+    maxDepth: options.guided?.maxDepth ?? options.maxDepth ?? 2,
+    maxScenarios: options.guided?.maxScenarios ?? options.maxScenarios,
     seed,
-    maxScenarios: options.maxScenarios,
+    noveltyWeight: options.guided?.noveltyWeight,
+    failureWeight: options.guided?.failureWeight,
+    complexityPenalty: options.guided?.complexityPenalty,
   });
-  const guided = () => guidedScenarios(
-    points,
-    options.previousRuns ?? [],
-    {
-      maxDepth: options.guided?.maxDepth ?? options.maxDepth ?? 2,
-      maxScenarios: options.guided?.maxScenarios ?? options.maxScenarios,
-      seed,
-      noveltyWeight: options.guided?.noveltyWeight,
-      failureWeight: options.guided?.failureWeight,
-      complexityPenalty: options.guided?.complexityPenalty,
-    },
-  );
   const coverageGuided = () => {
     const guidance = new CoverageGuidance();
     for (const run of options.previousRuns ?? []) guidance.observe(run);
@@ -93,9 +73,7 @@ export function planScenarios(
       includePreviouslyExecuted: options.coverageGuided?.includePreviouslyExecuted,
     });
   };
-  const incidents = () => (options.incidents ?? []).map((incident) =>
-    incidentScenario(incident, { seed, metadata: { strategy: "incidents" } }),
-  );
+  const incidents = () => (options.incidents ?? []).map((incident) => incidentScenario(incident, { seed, metadata: { strategy: "incidents" } }));
 
   let scenarios: readonly Scenario[];
   switch (strategy) {
@@ -104,15 +82,13 @@ export function planScenarios(
     case "guided": scenarios = guided(); break;
     case "coverage-guided": scenarios = coverageGuided(); break;
     case "incidents": scenarios = incidents(); break;
-    case "hybrid":
-      scenarios = [
-        ...enumerateScenarios(points, { maxDepth: 1, includeEmpty: false }),
-        ...incidents(),
-        ...pairwise(),
-        ...coverageGuided(),
-        ...guided(),
-      ];
-      break;
+    case "hybrid": scenarios = [
+      ...enumerateScenarios(points, { maxDepth: 1, includeEmpty: false }),
+      ...incidents(),
+      ...pairwise(),
+      ...coverageGuided(),
+      ...guided(),
+    ]; break;
   }
 
   const deduplicated = limitScenarios(deduplicateScenarios(scenarios), options.maxScenarios);
@@ -132,29 +108,46 @@ export interface ExecuteScenarioPlanOptions {
   seed?: number;
   stopOnFirstFailure?: boolean;
   minimizeFailure?: boolean;
+  concurrency?: number;
+  budget?: ScenarioBudget;
+  estimateCost?: ScenarioCostEstimator;
 }
+
+export interface PlanExecutionSummary {
+  concurrency: number;
+  estimatedCost: number;
+  elapsedMs: number;
+  skipped: readonly SkippedScenario[];
+}
+
+export type PlannedExplorationResult<State = unknown> = ExplorationResult<State> & {
+  execution: PlanExecutionSummary;
+};
 
 /** Execute an already-planned scenario list through the normal checker/MFS path. */
 export async function executeScenarioPlan<State>(
   plan: ScenarioPlan,
   execute: (scenario: Scenario) => Promise<RunResult<State>>,
   options: ExecuteScenarioPlanOptions = {},
-): Promise<ExplorationResult<State>> {
+): Promise<PlannedExplorationResult<State>> {
   const baselineScenario: Scenario = { id: "baseline", perturbations: [], seed: options.seed };
   const baseline = await execute(baselineScenario);
-  const runs: RunResult<State>[] = [];
-  let firstFailure: RunResult<State> | undefined;
+  const scenarios = plan.scenarios.map((planned) => ({ ...planned, seed: planned.seed ?? options.seed }));
+  const batch = await executeScenarioBatch(scenarios, execute, {
+    concurrency: options.concurrency ?? 1,
+    stopOnFirstFailure: options.stopOnFirstFailure ?? true,
+    budget: options.budget,
+    estimateCost: options.estimateCost,
+  });
+  const firstFailure = batch.firstFailure;
+  const execution: PlanExecutionSummary = {
+    concurrency: Math.max(1, Math.floor(options.concurrency ?? 1)),
+    estimatedCost: batch.estimatedCost,
+    elapsedMs: batch.elapsedMs,
+    skipped: batch.skipped,
+  };
 
-  for (const planned of plan.scenarios) {
-    const result = await execute({ ...planned, seed: planned.seed ?? options.seed });
-    runs.push(result);
-    if (checksFailed(result.checks)) {
-      firstFailure = result;
-      if (options.stopOnFirstFailure ?? true) break;
-    }
-  }
-
-  if (!firstFailure || options.minimizeFailure === false) return { baseline, runs, firstFailure };
+  if (!firstFailure || options.minimizeFailure === false) return { baseline, runs: batch.runs, firstFailure, execution };
 
   const minimized = await minimizeFailureSet(firstFailure.scenario.perturbations, async (candidate) => {
     const result = await execute({
@@ -168,10 +161,11 @@ export async function executeScenarioPlan<State>(
 
   return {
     baseline,
-    runs,
+    runs: batch.runs,
     firstFailure,
     minimalFailureSet: minimized.minimal,
     minimizationAttempts: minimized.attempts,
+    execution,
   };
 }
 
@@ -179,7 +173,7 @@ export async function exploreWithStrategy<State>(
   points: readonly FaultPoint[],
   execute: (scenario: Scenario) => Promise<RunResult<State>>,
   options: ScenarioPlanOptions & ExecuteScenarioPlanOptions = {},
-): Promise<ExplorationResult<State> & { plan: ScenarioPlan }> {
+): Promise<PlannedExplorationResult<State> & { plan: ScenarioPlan }> {
   const plan = planScenarios(points, options);
   const result = await executeScenarioPlan(plan, execute, options);
   return { ...result, plan };
