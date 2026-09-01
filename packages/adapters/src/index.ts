@@ -4,3 +4,4 @@ export * from "./webhooks.js";
 export * from "./recommend.js";
 export * from "./registry.js";
 export * from "./semantics.js";
+export * from "./contracts.js";
