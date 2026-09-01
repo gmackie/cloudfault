@@ -19,7 +19,7 @@ const semanticCase = (
 ): AdapterConformanceCase => ({ name, request: request(url, method, headers), expected });
 
 export const bundledContractFixtures: readonly ContractFixture[] = [
-  fixture("stripe", [semanticCase("confirm", "https://api.stripe.com/v1/payment_intents/pi_test/confirm", { operation: "payment.confirm", effect: "external-side-effect", faultKinds: ["commit-then-timeout"] }, "POST", { "Idempotency-Key": "order-1" })]),
+  fixture("stripe", [semanticCase("confirm", "https://api.stripe.com/v1/payment_intents/pi_test/confirm", { operation: "payment_intent.confirm", effect: "external-side-effect", faultKinds: ["commit-then-timeout"] }, "POST", { "Idempotency-Key": "order-1" })]),
   fixture("github", [semanticCase("issue-create", "https://api.github.com/repos/o/r/issues", { operation: "issue.create", effect: "external-side-effect", faultKinds: ["github-secondary-rate-limit"] })]),
   fixture("openai", [semanticCase("response-create", "https://api.openai.com/v1/responses", { operation: "response.create", effect: "external-side-effect", faultKinds: ["stream-interrupt", "openai-long-request-timeout"] })]),
   fixture("anthropic", [semanticCase("message-create", "https://api.anthropic.com/v1/messages", { operation: "message.create", effect: "external-side-effect", faultKinds: ["stream-interrupt", "anthropic-overloaded"] })]),
