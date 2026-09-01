@@ -13,6 +13,7 @@ export * from "./reporters.js";
 export * from "./runner.js";
 export * from "./workload.js";
 export * from "./discovery.js";
+export * from "./lineage.js";
 export * from "./cache.js";
 export * from "./covering.js";
 export * from "./incidents.js";
