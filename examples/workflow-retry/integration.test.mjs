@@ -12,22 +12,27 @@ async function run(perturbations) {
   const server = createTestHarness({ workers: [{ configPath }] });
   await server.listen();
   try {
-    // The introspector installs Workflow test hooks by reloading Miniflare.
-    // A WorkerHandle acquired before that reload is intentionally invalidated,
-    // so only use the initial handle to create the introspector. Dispatch the
-    // application request through the TestHarness itself after modifiers land.
-    const controllerWorker = server.getWorker("cloudfault-workflow-retry");
-    const workflow = await controllerWorker.introspectWorkflow("ORDER_FLOW");
-    try {
-      await applyWorkflowScenario(workflow, { perturbations }, {
-        target: "ORDER_FLOW",
-        disableRetryDelays: true,
-      });
-      const response = await server.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
-      assert.equal(response.status, 200);
-      const started = await response.json();
-      assert.equal(started.orderId, "812");
+    // Workflow modifiers reload Miniflare. Any WorkerHandle/introspector obtained
+    // before modifyAll() becomes poisoned, so the first introspector is control-
+    // plane-only: configure it, then discard it without calling it again.
+    const initialWorker = server.getWorker("cloudfault-workflow-retry");
+    const initialWorkflow = await initialWorker.introspectWorkflow("ORDER_FLOW");
+    await applyWorkflowScenario(initialWorkflow, { perturbations }, {
+      target: "ORDER_FLOW",
+      disableRetryDelays: true,
+    });
 
+    // Dispatch through the TestHarness so we do not retain a pre-reload Worker
+    // stub. After the instance starts, reacquire both the Worker and Workflow
+    // introspector from the current Miniflare generation before inspecting it.
+    const response = await server.fetch("https://workflow.test/start?orderId=812", { method: "POST" });
+    assert.equal(response.status, 200);
+    const started = await response.json();
+    assert.equal(started.orderId, "812");
+
+    const inspectionWorker = server.getWorker("cloudfault-workflow-retry");
+    const workflow = await inspectionWorker.introspectWorkflow("ORDER_FLOW");
+    try {
       const instances = await workflow.get();
       assert.equal(instances.length, 1);
       const [instance] = instances;
