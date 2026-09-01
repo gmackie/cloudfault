@@ -20,3 +20,4 @@ export * from "./incidents.js";
 export * from "./traffic.js";
 export * from "./backend.js";
 export * from "./guidance.js";
+export * from "./oracles.js";
