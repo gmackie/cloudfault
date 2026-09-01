@@ -8,6 +8,18 @@ import { applyWorkflowScenario, workflowStepRetry } from "@cloudfault/cloudflare
 const here = path.dirname(fileURLToPath(import.meta.url));
 const configPath = path.join(here, "worker", "wrangler.jsonc");
 
+async function closeAfterWorkflowReload(server) {
+  try {
+    await server.close();
+  } catch (error) {
+    // Wrangler 4.127.x can surface this during TestHarness cleanup after
+    // WorkflowIntrospector.modifyAll() reloads Miniflare. The Workflow has
+    // already completed and the error is cleanup-only; do not mask any other
+    // close failure.
+    if (!String(error).includes("Attempted to use poisoned stub")) throw error;
+  }
+}
+
 async function run(perturbations) {
   const server = createTestHarness({ workers: [{ configPath }] });
   await server.listen();
@@ -34,11 +46,7 @@ async function run(perturbations) {
     await instance.waitForStatus("complete");
     return await instance.getOutput();
   } finally {
-    // modifyAll() reloads Miniflare and can poison the runtime stub used by
-    // WorkflowIntrospector.dispose(). Closing the owning harness tears down the
-    // introspection session and all runtime objects without touching that stale
-    // stub again.
-    await server.close();
+    await closeAfterWorkflowReload(server);
   }
 }
 
