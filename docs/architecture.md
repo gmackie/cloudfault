@@ -215,6 +215,41 @@ way to apply a prefix of an atomic call), runs the prefix statement by
 statement, and emits one child operation per statement carrying
 `statementIndex`, so the resulting history says exactly which statements landed.
 
+## R2 multipart uploads
+
+`createR2FaultProxy()` interposes on `head/get/put/delete/list` **and on the
+multipart surface**: `createMultipartUpload()` and `resumeMultipartUpload()`
+return a wrapped `R2MultipartUpload`, so `uploadPart()`, `complete()` and
+`abort()` go through the same seam. Without that wrapping the handle escapes the
+proxy and a multipart write is invisible to CloudFault — which matters because a
+multipart upload is four separate round trips and only the last one makes the
+object visible under its key.
+
+```text
+r2PartUploadError               one part rejected, nothing visible, parts still billed
+r2MultipartCommitThenTimeout    object materialised, indeterminate  <- THE multipart fault
+r2PartialMultipartCompletion    CONTRACT PROBE, see below
+```
+
+`r2MultipartCommitThenTimeout` is the R2 analogue of
+`d1BatchCommitThenResponseLost`, and it is worse in one specific way: the
+caller's natural recovery from a lost completion is `abort()`, and aborting an
+upload that already completed succeeds without removing the object.
+
+Real R2 completes a multipart upload atomically: the object appears with every
+part the caller listed, or it does not appear. `r2PartialMultipartCompletion`
+models a backend that does not promise that, so it is a **contract probe** on
+the same terms as `d1PartialBatchApplication` — refused unless the proxy is
+constructed with `allowContractProbes: true`, and named by
+`R2_CONTRACT_PROBE_KINDS`. On the probe path CloudFault completes the upload
+with a prefix of the caller's part list (there is no other way to materialise
+part of an all-or-nothing call) and records an `applied` entry per part, so the
+history says exactly which parts landed.
+
+Reads stay deliberately asymmetric with writes: `head/get/list` record
+`actual: "unknown"` on success, because a read that returned proves the response
+arrived and says nothing about durability.
+
 ## Multi-event workloads
 
 A delivery fault needs something to be delivered *against*. `webhook-reorder`

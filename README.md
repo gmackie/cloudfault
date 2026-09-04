@@ -45,6 +45,7 @@ CloudFault is an experimental but executable framework. The repository currently
 - Cloudflare KV, D1, R2, Queue, Durable Object, Workflow, Scheduled, Service Binding, and observer-region semantics;
 - shape-preserving D1 and R2 degradation proxies, including committed-write/lost-response ambiguity;
 - **`D1Database.batch()` interposition** with statement-level selectors, and contract probes that are refused unless explicitly enabled;
+- **R2 multipart interposition** — `createMultipartUpload`/`resumeMultipartUpload` hand back a wrapped upload whose `uploadPart`/`complete`/`abort` are instrumented, with part-scoped selectors and the same refused-by-default contract probes;
 - a **privileged `OutcomeOracle`** asked by caller-minted token, with `oracle` / `declared` / `inferred` / `unknown` provenance on every recorded outcome;
 - **multi-event workloads** with per-event delivery faults and order/uniqueness/completeness checkers;
 - **bounded deterministic interleaving exploration** over declared suspension points;
@@ -243,6 +244,8 @@ KV observer lag                          D1 transient backend errors
 KV stale negative observations           D1 committed-write response loss
 Queue duplicate delivery                 R2 transient capacity errors
 Queue rebatching                         R2 committed-write response loss
+                                         R2 multipart part-upload rejection
+                                         R2 multipart completion response loss
 D1 session/replica visibility            Service Binding timeout/unavailability
 Workflow/DO retry behavior               public API 429/5xx/disconnect
 Scheduled duplicate/delay                provider commit -> lost response
