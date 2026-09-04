@@ -62,6 +62,7 @@ This file tracks the **remaining** work. The original implementation program is 
 - [x] Scheduled duplicate/delay semantics.
 - [x] logical observer-region profiles.
 - [x] multi-observer workload runner + merged collision-safe causal history.
+- [x] bounded deterministic interleaving exploration over declared suspension points (`exploreInterleavings`); limits and the case against going further are documented in `docs/concurrency.md`.
 - [x] workerd/Vitest/Miniflare integration suite continuously exercised in CI.
 
 ### Provider ecosystem
@@ -149,6 +150,14 @@ This file tracks the **remaining** work. The original implementation program is 
 - [ ] Staging proxy mode for provider sandboxes with secret-safe redaction.
 - [ ] Remote result streaming for long systematic runs.
 - [ ] Remote artifact upload/download and stable run IDs.
+
+## Deliberately out of scope
+
+- **Sound interleaving exploration** (intercepting every `await`, a
+  happens-before model per Cloudflare primitive, partial-order reduction).
+  `exploreInterleavings()` covers the bounded, declared-point fragment; the
+  reasoning for stopping there is in `docs/concurrency.md`. Reopening this
+  should be a separate evidence-backed project, not an incremental API change.
 
 ## V1 — ecosystem + research loop
 

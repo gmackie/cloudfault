@@ -334,4 +334,4 @@ CloudFault alternates MFS reduction and sequence delta-debugging until neither w
 9. **Keep production code production-shaped.** Prefer runtime boundaries over application test branches.
 10. **Do not fork workerd.** Build above Cloudflare-maintained execution wherever possible.
 
-See [Architecture](docs/architecture.md), [Adapter Authoring](docs/adapter-authoring.md), [Provider Support](docs/provider-support.md), [Research](docs/research.md), and [Roadmap](ROADMAP.md).
+See [Architecture](docs/architecture.md), [Adapter Authoring](docs/adapter-authoring.md), [Concurrency](docs/concurrency.md), [Provider Support](docs/provider-support.md), [Research](docs/research.md), and [Roadmap](ROADMAP.md).

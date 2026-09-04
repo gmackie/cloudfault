@@ -267,6 +267,29 @@ The workload stays a plain array, so `shrinkSequence()` and
 `shrinkCounterexample()` still delta-debug it: a six-event workload with one
 delayed event reduces to the delayed event plus one it can overtake.
 
+## Interleaving exploration
+
+`runConcurrentWorkload()` records the schedule that happened.
+`exploreInterleavings()` enumerates schedules instead: actors declare their own
+suspension points with `await context.yield()`, every ordering of those points
+is replayed deterministically, and a failing schedule is a plain array of actor
+names that re-runs as-is.
+
+```ts
+const exploration = await exploreInterleavings({
+  setup: () => ({ state, actors }),
+  check: ({ state, results }) => exactlyOneWinner(state, results),
+});
+```
+
+A schedule is a `SemanticVariation`, not a `Fault`: nothing failed, the
+application is simply wrong under a legal ordering.
+
+This is a **bounded** model, not a sound one — only declared suspension points,
+no partial-order reduction, a hard `maxSchedules` cap that reports when it bit,
+and one isolate. [docs/concurrency.md](concurrency.md) states the limits and why
+CloudFault stops short of a model checker.
+
 ## Runtime paths
 
 ### Wrangler Test Harness
