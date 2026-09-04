@@ -1,6 +1,7 @@
 {
   "name": "@cloudfault/adapters",
   "version": "0.1.0",
+  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,8 +15,5 @@
     "@cloudfault/adapter-sdk": "file:../adapter-sdk",
     "@cloudfault/stripe": "file:../stripe"
   },
-  "files": [
-    "dist"
-  ],
   "license": "MIT"
 }

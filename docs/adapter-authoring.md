@@ -9,7 +9,7 @@ Adapters are unofficial unless a provider explicitly adopts or maintains one.
 Most integrations should start with `defineRulesAdapter()`:
 
 ```ts
-import { defineRulesAdapter } from "@cloudfault/adapter-sdk";
+import { defineRulesAdapter } from "@gmacko/cloudfault/adapter-sdk";
 
 export const acmeAdapter = defineRulesAdapter({
   manifest: {
@@ -120,7 +120,7 @@ export default acmeAdapter;
 or a plugin:
 
 ```ts
-import { defineAdapterPlugin } from "@cloudfault/adapter-sdk";
+import { defineAdapterPlugin } from "@gmacko/cloudfault/adapter-sdk";
 
 export default defineAdapterPlugin({
   name: "acme-suite",

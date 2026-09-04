@@ -1,6 +1,6 @@
 # Provider support
 
-`@cloudfault/adapters` currently bundles 25 **unofficial semantic adapters**.
+`@gmacko/cloudfault/adapters` currently bundles 25 **unofficial semantic adapters**.
 
 | Adapter | Primary semantic focus |
 | --- | --- |

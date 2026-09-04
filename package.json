@@ -9,14 +9,18 @@
   ],
   "scripts": {
     "clean": "find packages -type d -name dist -prune -exec rm -rf {} + && find packages -name '*.tsbuildinfo' -delete",
-    "build": "npm run clean && tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/adapters packages/fast-check",
+    "build": "npm run clean && tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/adapters packages/fast-check && node scripts/build-package.mjs",
+    "build:libs": "tsc -b packages/core packages/adapter-sdk packages/cloudflare packages/stripe packages/adapters packages/fast-check",
     "test:unit": "node --test test/*.test.mjs",
     "test:integration": "node --test examples/checkout/integration.test.mjs examples/outbound-stripe/integration.test.mjs examples/queue-retry/integration.test.mjs",
     "test:workers": "vitest run --config examples/workflow-vitest/vitest.config.js && vitest run --config examples/durable-object-vitest/vitest.config.js && vitest run --config examples/outbound-stripe-vitest/vitest.config.js && vitest run --config examples/storage-vitest/vitest.config.js",
     "test": "npm run build && npm run test:unit && npm run test:integration && npm run test:workers",
-    "demo": "npm run build && node packages/cli/bin/cloudfault-v2.mjs demo",
-    "inspect": "npm run build && node packages/cli/bin/cloudfault-v2.mjs inspect",
-    "cloudfault": "npm run build && node packages/cli/bin/cloudfault-v2.mjs"
+    "sync-versions": "node scripts/sync-versions.mjs",
+    "check-versions": "node scripts/sync-versions.mjs --check",
+    "pack": "npm run build && npm pack --workspace @gmacko/cloudfault",
+    "demo": "npm run build && node packages/cli/bin/cloudfault-v4.mjs demo",
+    "inspect": "npm run build && node packages/cli/bin/cloudfault-v4.mjs inspect",
+    "cloudfault": "npm run build && node packages/cli/bin/cloudfault-v4.mjs"
   },
   "devDependencies": {
     "@cloudflare/vitest-plugin": "^1.1.2",

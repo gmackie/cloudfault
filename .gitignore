@@ -4,3 +4,13 @@ dist/
 coverage/
 .cloudfault/
 .DS_Store
+
+# Copied from the repo root by packages/cloudfault prepack.
+packages/cloudfault/LICENSE
+
+# npm pack output
+*.tgz
+
+# CI installs with `npm install` so dependency drift is caught by the real
+# workerd/Wrangler fixtures rather than pinned by a lockfile.
+package-lock.json

@@ -1,0 +1,136 @@
+{
+  "name": "@gmacko/cloudfault",
+  "version": "0.1.0",
+  "description": "Jepsen-lite for Cloudflare Workers: systematic fault injection, minimal failure sets, and invariant checking for Workers and the external APIs they call.",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/core/index.d.ts",
+      "import": "./dist/core/index.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare/index.d.ts",
+      "import": "./dist/cloudflare/index.js"
+    },
+    "./stripe": {
+      "types": "./dist/stripe/index.d.ts",
+      "import": "./dist/stripe/index.js"
+    },
+    "./adapter-sdk": {
+      "types": "./dist/adapter-sdk/index.d.ts",
+      "import": "./dist/adapter-sdk/index.js"
+    },
+    "./adapter-sdk/capabilities": {
+      "types": "./dist/adapter-sdk/capabilities.d.ts",
+      "import": "./dist/adapter-sdk/capabilities.js"
+    },
+    "./adapter-sdk/conformance": {
+      "types": "./dist/adapter-sdk/conformance.d.ts",
+      "import": "./dist/adapter-sdk/conformance.js"
+    },
+    "./adapter-sdk/contracts": {
+      "types": "./dist/adapter-sdk/contracts.d.ts",
+      "import": "./dist/adapter-sdk/contracts.js"
+    },
+    "./adapter-sdk/signers": {
+      "types": "./dist/adapter-sdk/signers.d.ts",
+      "import": "./dist/adapter-sdk/signers.js"
+    },
+    "./adapter-sdk/emulate": {
+      "types": "./dist/adapter-sdk/emulate.d.ts",
+      "import": "./dist/adapter-sdk/emulate.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
+    },
+    "./fast-check": {
+      "types": "./dist/fast-check/index.d.ts",
+      "import": "./dist/fast-check/index.js"
+    },
+    "./fast-check/shrink": {
+      "types": "./dist/fast-check/shrink.d.ts",
+      "import": "./dist/fast-check/shrink.js"
+    },
+    "./fast-check/model-shrink": {
+      "types": "./dist/fast-check/model-shrink.d.ts",
+      "import": "./dist/fast-check/model-shrink.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/core/index.js",
+  "types": "./dist/core/index.d.ts",
+  "bin": {
+    "cloudfault": "./dist/cli/bin/cloudfault-v4.mjs"
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/gmackie/cloudfault#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gmackie/cloudfault.git",
+    "directory": "packages/cloudfault"
+  },
+  "bugs": {
+    "url": "https://github.com/gmackie/cloudfault/issues"
+  },
+  "keywords": [
+    "cloudflare",
+    "workers",
+    "durable-objects",
+    "miniflare",
+    "workerd",
+    "chaos-engineering",
+    "fault-injection",
+    "jepsen",
+    "distributed-systems",
+    "linearizability",
+    "property-testing",
+    "testing",
+    "resilience",
+    "idempotency",
+    "stripe"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "peerDependencies": {
+    "fast-check": ">=4",
+    "miniflare": ">=3",
+    "msw": ">=2.14.1",
+    "wrangler": ">=4.106.0"
+  },
+  "peerDependenciesMeta": {
+    "fast-check": {
+      "optional": true
+    },
+    "miniflare": {
+      "optional": true
+    },
+    "msw": {
+      "optional": true
+    },
+    "wrangler": {
+      "optional": true
+    }
+  },
+  "scripts": {
+    "prepack": "cp ../../LICENSE ."
+  },
+  "devDependencies": {
+    "@cloudfault/adapter-sdk": "file:../adapter-sdk",
+    "@cloudfault/adapters": "file:../adapters",
+    "@cloudfault/cli": "file:../cli",
+    "@cloudfault/cloudflare": "file:../cloudflare",
+    "@cloudfault/core": "file:../core",
+    "@cloudfault/fast-check": "file:../fast-check",
+    "@cloudfault/stripe": "file:../stripe"
+  }
+}

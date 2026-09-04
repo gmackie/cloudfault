@@ -1,0 +1,77 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  check-release:
+    name: Check for new version
+    runs-on: ubuntu-latest
+    outputs:
+      should_release: ${{ steps.check.outputs.should_release }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compare version to registry
+        id: check
+        run: |
+          LOCAL_VERSION=$(node -p "require('./packages/cloudfault/package.json').version")
+          REGISTRY_VERSION=$(npm view @gmacko/cloudfault version 2>/dev/null || echo "0.0.0")
+          echo "@gmacko/cloudfault — local: $LOCAL_VERSION, registry: $REGISTRY_VERSION"
+
+          SHOULD_RELEASE=false
+          if [ "$LOCAL_VERSION" != "$REGISTRY_VERSION" ]; then
+            SHOULD_RELEASE=true
+          fi
+
+          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+          echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Publish
+    needs: check-release
+    if: needs.check-release.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Check workspace versions are in sync
+        run: npm run check-versions
+
+      - name: Test
+        run: npm test
+
+      # Only @gmacko/cloudfault is published. The @cloudfault/* workspace
+      # packages are private and are folded into its dist/ by
+      # scripts/build-package.mjs, so they never need to exist on npm.
+      # Auth uses an NPM_TOKEN secret rather than npm OIDC trusted publishing,
+      # which is not available on this repo's CI host.
+      - name: Publish @gmacko/cloudfault
+        run: |
+          TARBALL=$(npm pack --workspace @gmacko/cloudfault --pack-destination /tmp | tail -1)
+          npm publish "/tmp/$TARBALL" --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

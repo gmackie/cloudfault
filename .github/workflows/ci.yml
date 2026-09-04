@@ -15,4 +15,6 @@ jobs:
         with:
           node-version: 22
       - run: npm install --no-audit --no-fund
+      - run: npm run check-versions
       - run: npm test
+      - run: npm pack --workspace @gmacko/cloudfault --dry-run

@@ -56,24 +56,53 @@ CloudFault is an experimental but executable framework. The repository currently
 
 Bundled adapters model a useful semantic subset. They do **not** claim to be complete provider emulators. An adapter can use synthetic responses, proxy a real sandbox/test API, sit over a stateful emulator such as `emulate`, or use a purpose-built backend such as the included Stripe fixture.
 
-## Packages
+## Install
+
+CloudFault ships as a single package on npm:
+
+```bash
+npm install --save-dev @gmacko/cloudfault
+```
+
+```ts
+import { defineCloudFault } from "@gmacko/cloudfault";                 // core
+import { staleKvRead } from "@gmacko/cloudfault/cloudflare";
+import { stripeAdapter } from "@gmacko/cloudfault/stripe";
+import { defineRulesAdapter } from "@gmacko/cloudfault/adapter-sdk";
+import { firstPartyAdapters } from "@gmacko/cloudfault/adapters";
+import { findScenarioCounterexample } from "@gmacko/cloudfault/fast-check";
+```
+
+## Repository layout
+
+This is an npm workspace. Only `packages/cloudfault` (`@gmacko/cloudfault`) is
+published; the `@cloudfault/*` packages below are private and are folded into
+its `dist/` at build time by `scripts/build-package.mjs`, which rewrites their
+cross-package specifiers to relative paths.
 
 ```text
-@cloudfault/core          history, lineage, search, MFS, oracles, diagnostics, reports, backends
-@cloudfault/adapter-sdk   semantic adapter API, capability packs, conformance, contracts, signers
-@cloudfault/cloudflare    Cloudflare semantics and workerd/Miniflare/MSW runtime bridges
-@cloudfault/stripe        Stripe semantic adapter + stateful in-memory payment backend
-@cloudfault/adapters      bundled unofficial provider catalog + executable semantic overlays
-@cloudfault/fast-check    property-testing bridge + workload/counterexample shrinking
-@cloudfault/cli           developer CLI
+packages/cloudfault      @gmacko/cloudfault — THE published package
+packages/core            history, lineage, search, MFS, oracles, diagnostics, reports, backends   -> "."
+packages/adapter-sdk     semantic adapter API, capability packs, conformance, contracts, signers  -> "./adapter-sdk"
+packages/cloudflare      Cloudflare semantics and workerd/Miniflare/MSW runtime bridges           -> "./cloudflare"
+packages/stripe          Stripe semantic adapter + stateful in-memory payment backend             -> "./stripe"
+packages/adapters        bundled unofficial provider catalog + executable semantic overlays       -> "./adapters"
+packages/fast-check      property-testing bridge + workload/counterexample shrinking              -> "./fast-check"
+packages/cli             developer CLI                                                            -> the `cloudfault` bin
 ```
+
+Repo-internal code (tests, examples) imports the workspace names directly.
+Anything a consumer sees — the README, `docs/`, and the config that
+`cloudfault init` generates — uses the published `@gmacko/cloudfault` names.
 
 ## Development
 
 ```bash
 npm install
-npm test
-npm run demo
+npm test              # build + unit + workerd integration + Workers Vitest
+npm run build         # tsc -b, then assemble packages/cloudfault/dist
+npm run pack          # build + npm pack the publishable package
+npm run sync-versions # propagate packages/cloudfault's version everywhere
 ```
 
 The CI suite intentionally includes real runtime fixtures against the currently pinned Wrangler/workerd stack so Cloudflare testing-runtime drift is caught rather than hidden behind unit mocks.
@@ -129,13 +158,13 @@ export default {
 
 `coverage-guided` scores candidate scenarios using what previous histories already exercised. Unseen perturbations and unseen perturbation pairs are preferred; failure-associated perturbations receive a smaller exploitation bonus. `hybrid` layers cheap depth-1 cases, curated correlated incidents, pairwise coverage, coverage-guided candidates, and feedback-guided candidates.
 
-For adaptive callers that want to update guidance after every execution, `@cloudfault/core` also exposes `CoverageGuidance`, `coverageGuidedScenarios()`, and `exploreCoverageGuided()` directly.
+For adaptive callers that want to update guidance after every execution, `@gmacko/cloudfault` also exposes `CoverageGuidance`, `coverageGuidedScenarios()`, and `exploreCoverageGuided()` directly.
 
 ## A CloudFault test
 
 ```js
-import { defineCloudFault, invariant, runCheckers } from "@cloudfault/core";
-import { staleKvRead, serviceTimeout } from "@cloudfault/cloudflare";
+import { defineCloudFault, invariant, runCheckers } from "@gmacko/cloudfault";
+import { staleKvRead, serviceTimeout } from "@gmacko/cloudfault/cloudflare";
 
 export const cloudfault = defineCloudFault({
   name: "checkout-correctness",
@@ -217,7 +246,7 @@ Scheduled duplicate/delay                provider commit -> lost response
 
 A stale KV observation is not labeled “Cloudflare broke.” The question is whether the application remains correct while using the consistency model it selected.
 
-`@cloudfault/cloudflare` also includes observer traces/checkers for:
+`@gmacko/cloudfault/cloudflare` also includes observer traces/checkers for:
 
 - future/impossible reads;
 - monotonic observer reads;

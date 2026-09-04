@@ -196,6 +196,6 @@ export async function loadFastCheck(): Promise<FastCheckLike> {
   try {
     return (await Function("return import('fast-check')")()) as FastCheckLike;
   } catch (error) {
-    throw new Error("@cloudfault/fast-check requires fast-check >= 4", { cause: error });
+    throw new Error("@gmacko/cloudfault/fast-check requires fast-check >= 4", { cause: error });
   }
 }
