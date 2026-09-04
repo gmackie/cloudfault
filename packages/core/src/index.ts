@@ -12,6 +12,7 @@ export * from "./report.js";
 export * from "./reporters.js";
 export * from "./runner.js";
 export * from "./workload.js";
+export * from "./events.js";
 export * from "./discovery.js";
 export * from "./lineage.js";
 export * from "./adaptive.js";

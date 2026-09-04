@@ -21,7 +21,14 @@ export interface WebhookDeliveryOptions {
   now?: number;
 }
 
-/** Deterministically expand logical webhook events into delivery attempts. */
+/**
+ * Deterministically expand logical webhook events into delivery attempts.
+ *
+ * The pure primitive. For a workload that is driven by a scenario's
+ * perturbations and recorded in a history, use `runEventWorkload()` from the
+ * core package, which activates delivery faults through the controller and
+ * derives arrival order from delay rather than taking it as a flag.
+ */
 export function planWebhookDeliveries<T>(
   events: readonly WebhookEvent<T>[],
   options: WebhookDeliveryOptions = {},
@@ -244,6 +251,54 @@ export function webhookFaults(target: string, operation = "webhook.delivery"): r
     base("webhook-duplicate", "Webhook is delivered more than once", { duplicates: 1 }),
     base("webhook-reorder", "Webhook delivery order differs from event creation order", { reorder: true }),
   ];
+}
+
+/**
+ * Delivery faults addressed to ONE event of a multi-event workload.
+ *
+ * `webhookFaults()` above is workload-wide, which is all a single-event
+ * workload can express -- and against a single event `webhook-reorder` and
+ * `webhook-delay` mean nothing at all, since there is nothing to be reordered
+ * against and nothing for a delay to arrive after. These are scoped by
+ * `selector.resource` (the event id) so a scenario can delay exactly one event
+ * of several, which is both what makes the fault meaningful and what lets
+ * minimization attribute the failure to a specific event.
+ *
+ * Consumed by `runEventWorkload()` in the core package.
+ */
+export function eventDeliveryFaults(target: string, eventId: string): readonly Perturbation[] {
+  const base = (kind: string, description: string, metadata: Record<string, unknown>): Fault => ({
+    id: `${target}:${eventId}:${kind}`,
+    target,
+    kind,
+    phase: "delivery",
+    description,
+    category: "provider",
+    // At-least-once delivery and unordered delivery are contract behaviour, not
+    // provider failure: the provider committed and told the truth. What is
+    // being tested is whether the application survives the contract it chose.
+    actualOutcome: "committed",
+    observedOutcome: "success",
+    selector: { target, resource: eventId },
+    metadata,
+  });
+  return [
+    base("webhook-delay", `Delivery of ${eventId} is delayed behind later events`, { delayMs: 1_000 }),
+    base("webhook-duplicate", `${eventId} is delivered more than once`, { duplicates: 1 }),
+    base("webhook-reorder", `${eventId} arrives after the event that followed it`, { positions: 1 }),
+  ];
+}
+
+export function eventDelay(target: string, eventId: string, delayMs = 1_000): Perturbation {
+  return { ...(eventDeliveryFaults(target, eventId)[0] as Fault), metadata: { delayMs } };
+}
+
+export function eventDuplicate(target: string, eventId: string, duplicates = 1): Perturbation {
+  return { ...(eventDeliveryFaults(target, eventId)[1] as Fault), metadata: { duplicates } };
+}
+
+export function eventReorder(target: string, eventId: string, positions = 1): Perturbation {
+  return { ...(eventDeliveryFaults(target, eventId)[2] as Fault), metadata: { positions } };
 }
 
 export function streamFaults(target: string, operation = "stream"): readonly Perturbation[] {

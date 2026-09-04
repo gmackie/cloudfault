@@ -73,6 +73,7 @@ This file tracks the **remaining** work. The original implementation program is 
 - [x] capability-aware executable semantic overlays.
 - [x] provider-specific behaviors for high-value cases such as Anthropic overload, GitHub secondary limits, Slack HTTP-200 errors, and Shopify GraphQL HTTP-200 errors.
 - [x] shared webhook delivery model.
+- [x] multi-event workload runner with per-event delivery selectors, plus order/uniqueness/completeness checkers that separate duplicate delivery from duplicate application.
 - [x] shared streaming interruption model.
 - [x] shared OAuth/token lifecycle model.
 - [x] shared async-job model.

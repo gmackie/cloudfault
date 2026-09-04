@@ -215,6 +215,58 @@ way to apply a prefix of an atomic call), runs the prefix statement by
 statement, and emits one child operation per statement carrying
 `statementIndex`, so the resulting history says exactly which statements landed.
 
+## Multi-event workloads
+
+A delivery fault needs something to be delivered *against*. `webhook-reorder`
+and `webhook-delay` say nothing about a workload that emits one event: there is
+nothing to be out of order with, and nothing for a delay to arrive after.
+
+`runEventWorkload()` emits several related events and delivers them under the
+scenario's `delivery`-phase perturbations:
+
+```ts
+const { plan, results } = await runEventWorkload({
+  controller,
+  target: "WEBHOOKS",
+  events: [
+    { id: "evt_1", type: "order.created", payload },
+    { id: "evt_2", type: "order.paid", payload },
+    { id: "evt_3", type: "order.fulfilled", payload },
+  ],
+  deliver: ({ delivery }) => handler(delivery.event),   // -> { applied: boolean }
+});
+```
+
+Each event gets an `event.emit` operation, so a delivery fault can be addressed
+to one event by `selector.resource` and is activated through the controller —
+which keeps it visible to the activation log, the MFS reducer and the causal
+report. Each delivery attempt is a child operation of its event, so duplicates
+and reorderings appear as lineage rather than loose history noise.
+`eventDelay()`, `eventDuplicate()` and `eventReorder()` in the adapter SDK build
+the scoped faults.
+
+**Order is derived, not asserted.** Delivery order comes out of arrival time, so
+delaying one event of three genuinely lands it after the other two — which is
+how reordering happens in practice rather than being a separate flag.
+
+Three checkers read the resulting history:
+
+```text
+checkDeliveryOrder          were events APPLIED in creation order?
+checkDeliveryUniqueness     was any event APPLIED more than once?
+checkDeliveryCompleteness   was every event applied at least once?
+```
+
+The distinction they all turn on is delivery versus application. Duplicate
+*delivery* is contract behaviour — at-least-once is what these providers
+promise. Duplicate *application* is the bug. A handler reports which by
+returning `{ applied: false }` for a duplicate it recognised, so an idempotent
+handler and a naive one produce identical delivery traces and different verdicts.
+
+The workload stays a plain array, so `shrinkSequence()` and
+`shrinkCounterexample()` still delta-debug it: a six-event workload with one
+delayed event reduces to the delayed event plus one it can overtake.
+
 ## Runtime paths
 
 ### Wrangler Test Harness
