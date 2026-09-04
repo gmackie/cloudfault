@@ -1,6 +1,6 @@
 {
   "name": "@gmacko/cloudfault",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Jepsen-lite for Cloudflare Workers: systematic fault injection, minimal failure sets, and invariant checking for Workers and the external APIs they call.",
   "license": "MIT",
   "type": "module",

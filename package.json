@@ -1,6 +1,6 @@
 {
   "name": "cloudfault",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Systematic resilience and distributed-correctness testing for Cloudflare Workers and external APIs.",
   "type": "module",
