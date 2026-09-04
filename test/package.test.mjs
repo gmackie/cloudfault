@@ -17,7 +17,9 @@ test("the published package declares the public subpaths consumers depend on", (
   // Scoped packages publish restricted by default; without this the publish
   // silently produces a private package.
   assert.equal(manifest.publishConfig?.access, "public");
-  assert.equal(manifest.bin?.cloudfault, "./dist/cli/bin/cloudfault-v4.mjs");
+  // npm strips a leading "./" from bin paths during publish normalization and warns;
+  // store the normalized form so the published manifest is byte-identical to ours.
+  assert.equal(manifest.bin?.cloudfault, "dist/cli/bin/cloudfault-v4.mjs");
   for (const subpath of SUBPATHS) {
     assert.ok(manifest.exports[subpath], `missing exports entry for ${subpath}`);
   }

@@ -62,7 +62,7 @@
   "main": "./dist/core/index.js",
   "types": "./dist/core/index.d.ts",
   "bin": {
-    "cloudfault": "./dist/cli/bin/cloudfault-v4.mjs"
+    "cloudfault": "dist/cli/bin/cloudfault-v4.mjs"
   },
   "files": [
     "dist",
