@@ -25,15 +25,53 @@ export interface OperationRef {
   occurrence?: number;
   /** Retry/attempt number when known. */
   attempt?: number;
+  /**
+   * 0-based index of this sub-operation inside a multi-statement parent, e.g.
+   * the Nth statement of a `D1Database.batch([...])`. Absent on operations that
+   * are not sub-operations.
+   */
+  statementIndex?: number;
+  /** Caller-minted correlation token an `OutcomeOracle` can be asked about. */
+  token?: string;
 }
 
 export type ActualOutcome = "committed" | "not-committed" | "unknown";
 export type ObservedOutcome = "success" | "definite-failure" | "indeterminate";
 
+/**
+ * Where `OutcomeMetadata.actual` came from. This exists so a reader can tell an
+ * answer from a guess:
+ *
+ * - `oracle`   — a privileged backend was asked and answered (`OutcomeOracle`).
+ * - `declared` — the injected fault itself defines the outcome, because
+ *                CloudFault chose the moment of failure (it cut the wire after
+ *                a call that had already returned).
+ * - `inferred` — deduced from an observable proxy such as a 2xx status or a
+ *                normally-returned binding call. Sound only for backends whose
+ *                success implies durability.
+ * - `unknown`  — nothing could establish it. Never upgrade this to a guess.
+ */
+export type ActualOutcomeSource = "oracle" | "declared" | "inferred" | "unknown";
+
+/** One sub-operation of a multi-statement operation, as the provider reports it. */
+export interface AppliedSubOperation {
+  index: number;
+  committed: boolean;
+  detail?: string;
+}
+
 export interface OutcomeMetadata {
   actual?: ActualOutcome;
   observed?: ObservedOutcome;
   detail?: string;
+  /** Provenance of `actual`. Absent means the writer did not say. */
+  actualSource?: ActualOutcomeSource;
+  /** Provider-side commit ordering for the resource, when an oracle supplied it. */
+  version?: number;
+  /** Which sub-operations durably applied, when an oracle supplied it. */
+  applied?: readonly AppliedSubOperation[];
+  /** Free-form provider evidence (rows_written, etag, changes, ...). */
+  evidence?: Record<string, unknown>;
 }
 
 export interface HistoryEvent<T = unknown> {
@@ -71,6 +109,14 @@ export interface PerturbationSelector {
   executionIndex?: string;
   occurrence?: number;
   maxActivations?: number;
+  /**
+   * Addresses one statement inside a multi-statement operation (the Nth
+   * statement of a D1 batch). An operation that is *not* a sub-operation
+   * carries no `statementIndex` and is therefore not filtered by this, so the
+   * enclosing batch executor can still discover a statement-scoped fault and
+   * apply it at the right index.
+   */
+  statementIndex?: number;
 }
 
 export interface Fault {

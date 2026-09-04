@@ -105,7 +105,14 @@ callsite
 executionIndex
 occurrence
 maxActivations
+statementIndex
 ```
+
+`statementIndex` addresses one statement inside a multi-statement operation
+(the Nth statement of a `D1Database.batch()`). An operation that is not itself a
+sub-operation carries no `statementIndex` and is therefore not filtered by it,
+so a batch executor can discover a statement-scoped fault and apply it at the
+right index.
 
 This is the first step toward full Distributed Execution Indexing-style dynamic call identity.
 
@@ -122,6 +129,37 @@ This is the first step toward full Distributed Execution Indexing-style dynamic 
 The current minimizer guarantees 1-minimality: no single remaining perturbation can be removed without losing the failure. It does not claim globally minimum cardinality.
 
 Workload/data shrinking is a distinct concern and is delegated toward fast-check rather than conflated with fault-set minimization.
+
+## D1 `batch()` and contract probes
+
+`createD1FaultProxy()` interposes on `prepare().bind().first/all/run/raw` **and
+on `batch()`**. The batch seam is the one that matters for application
+correctness: `@effect/sql-d1`, Drizzle, and hand-rolled guarded writes all
+express their unit of work as one `batch()`, so a proxy that only reached the
+single-statement path could not reach an application's most valuable
+invariants at all.
+
+Real D1 `batch()` is atomic. Three of the batch faults model behaviour D1 can
+genuinely produce:
+
+```text
+d1BatchRejectBeforeCommit       nothing applied,  definite failure
+d1BatchCommitThenResponseLost   all applied,      indeterminate
+d1BatchErrorAfterCommit         all applied,      definite failure (and wrong)
+```
+
+The fourth, `d1PartialBatchApplication`, does not. It is a **contract probe**: a
+legal-elsewhere behaviour used to discover whether an application silently
+depends on atomicity. CloudFault refuses to run it unless the proxy is
+constructed with `allowContractProbes: true`, mirroring the emulate Cloudflare
+emulator, which refuses the same kinds unless a plan opts in. `D1_CONTRACT_PROBE_KINDS`
+names them. Presenting a probe as D1 behaviour would be exactly the
+overclaiming the roadmap's release bar forbids.
+
+On the probe path CloudFault bypasses the native `batch()` (there is no other
+way to apply a prefix of an atomic call), runs the prefix statement by
+statement, and emits one child operation per statement carrying
+`statementIndex`, so the resulting history says exactly which statements landed.
 
 ## Runtime paths
 

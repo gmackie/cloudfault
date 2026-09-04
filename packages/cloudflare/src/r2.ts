@@ -1,4 +1,12 @@
-import { ScenarioController, type Fault, type OperationRef, type Perturbation } from "@cloudfault/core";
+import {
+  askOracle,
+  outcomeMetadata,
+  ScenarioController,
+  type Fault,
+  type OperationRef,
+  type OutcomeOracle,
+  type Perturbation,
+} from "@cloudfault/core";
 
 export function r2CapacityError(target = "R2", status = 503): Fault {
   return {
@@ -63,6 +71,10 @@ export interface R2FaultProxyOptions {
   target?: string;
   process?: string | number;
   callsite?: string;
+  /** A privileged backend that can be asked what actually happened. See `OutcomeOracle`. */
+  oracle?: OutcomeOracle;
+  /** Mints and propagates the caller-minted correlation token for an operation. */
+  token?: (operation: OperationRef) => string | undefined;
 }
 
 function opRef(target: string, process: string | number, name: string, resource?: string, callsite?: string): OperationRef {
@@ -76,20 +88,43 @@ function opRef(target: string, process: string | number, name: string, resource?
   };
 }
 
-function injected(controller: ScenarioController, operation: OperationRef, perturbation: Perturbation): never {
+async function injected(
+  controller: ScenarioController,
+  operation: OperationRef,
+  perturbation: Perturbation,
+  seam: { oracle?: OutcomeOracle; token?: string } = {},
+): Promise<never> {
   const fault = "phase" in perturbation ? perturbation : undefined;
   const observed = fault?.observedOutcome ?? "definite-failure";
-  controller.complete(operation, observed === "indeterminate" ? "info" : "fail", undefined, {
-    actual: fault?.actualOutcome ?? "unknown",
-    observed,
-    detail: perturbation.description,
-  });
+  const privileged = await askOracle(seam.oracle, seam.token);
+  controller.complete(
+    operation,
+    observed === "indeterminate" ? "info" : "fail",
+    undefined,
+    outcomeMetadata(privileged, {
+      observed,
+      declared: fault?.actualOutcome,
+      detail: perturbation.description,
+    }),
+  );
   if (observed === "indeterminate") throw new R2IndeterminateError(perturbation);
   throw new R2InjectedError(perturbation);
 }
 
+/**
+ * A shape any `R2Bucket` satisfies, including `@cloudflare/workers-types`'
+ * `R2Bucket`. Its only purpose is to spare consumers a type assertion when the
+ * concrete binding's signatures are narrower than `R2BucketLike`'s; the proxy
+ * still returns the caller's exact type.
+ */
+export interface R2BucketCompatible {
+  put(key: string, value: never, options?: never): unknown;
+}
+
 /** Structural R2 wrapper that preserves the Bucket method surface. */
-export function createR2FaultProxy<T extends R2BucketLike>(bucket: T, options: R2FaultProxyOptions): T {
+export function createR2FaultProxy<T extends R2BucketLike>(bucket: T, options: R2FaultProxyOptions): T;
+export function createR2FaultProxy<T extends R2BucketCompatible>(bucket: T, options: R2FaultProxyOptions): T;
+export function createR2FaultProxy(bucket: R2BucketLike, options: R2FaultProxyOptions): R2BucketLike {
   const target = options.target ?? "R2";
   const process = options.process ?? "r2";
   const controller = options.controller;
@@ -100,34 +135,41 @@ export function createR2FaultProxy<T extends R2BucketLike>(bucket: T, options: R
     mutation: boolean,
     action: () => Promise<TResult>,
   ): Promise<TResult> => {
-    const operation = controller.begin(opRef(target, process, name, resource, options.callsite));
+    const ref = opRef(target, process, name, resource, options.callsite);
+    const token = options.token?.(ref);
+    const operation = controller.begin(token ? { ...ref, token } : ref);
+    const seam = { oracle: options.oracle, token };
     const before = controller.take(operation, mutation ? "before-commit" : "before-send")
       ?? controller.take(operation, "before-commit");
-    if (before) return injected(controller, operation, before);
+    if (before) return injected(controller, operation, before, seam);
     try {
       const result = await action();
       if (mutation) {
         const after = controller.take(operation, "after-commit-before-response") ?? controller.take(operation, "during-response");
-        if (after) return injected(controller, operation, after);
+        if (after) return injected(controller, operation, after, seam);
       }
-      controller.complete(operation, "ok", undefined, {
-        actual: mutation ? "committed" : "unknown",
+      const privileged = await askOracle(options.oracle, token);
+      controller.complete(operation, "ok", undefined, outcomeMetadata(privileged, {
         observed: "success",
-      });
+        // A binding call that returned normally is evidence, not privileged
+        // knowledge; a read says nothing about durability at all.
+        inferred: mutation ? "committed" : "unknown",
+      }));
       return result;
     } catch (error) {
       if (error instanceof R2InjectedError || error instanceof R2IndeterminateError) throw error;
       controller.complete(operation, "fail", undefined, {
         actual: "unknown",
         observed: "definite-failure",
+        actualSource: "unknown",
         detail: String(error),
       });
       throw error;
     }
   };
 
-  return new Proxy(bucket, {
-    get(targetObject, property, receiver) {
+  return new Proxy(bucket as object, {
+    get(targetObject: R2BucketLike, property, receiver) {
       if (property === "head") return (key: string) => invoke("r2.head", key, false, () => targetObject.head(key));
       if (property === "get") return (key: string, getOptions?: unknown) => invoke("r2.get", key, false, () => targetObject.get(key, getOptions));
       if (property === "put") return (key: string, value: unknown, putOptions?: unknown) => invoke("r2.put", key, true, () => targetObject.put(key, value, putOptions));
@@ -135,5 +177,5 @@ export function createR2FaultProxy<T extends R2BucketLike>(bucket: T, options: R
       if (property === "list") return (listOptions?: unknown) => invoke("r2.list", undefined, false, () => targetObject.list(listOptions));
       return Reflect.get(targetObject, property, receiver);
     },
-  }) as T;
+  }) as R2BucketLike;
 }

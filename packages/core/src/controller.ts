@@ -3,6 +3,7 @@ import { History } from "./history.js";
 import type {
   FaultPhase,
   OperationRef,
+  OutcomeMetadata,
   Perturbation,
   PerturbationActivation,
   PerturbationSelector,
@@ -36,6 +37,17 @@ function matchesSelector(
   if (selector.callsite && selector.callsite !== operation.callsite) return false;
   if (selector.executionIndex && selector.executionIndex !== operation.executionIndex) return false;
   if (selector.occurrence !== undefined && selector.occurrence !== occurrence) return false;
+  // statementIndex addresses one sub-operation of a multi-statement operation.
+  // The enclosing operation (a D1 batch) carries no statementIndex, so it is
+  // deliberately *not* filtered by this: the batch executor has to be able to
+  // discover a statement-scoped fault in order to apply it at the right index.
+  if (
+    selector.statementIndex !== undefined
+    && operation.statementIndex !== undefined
+    && selector.statementIndex !== operation.statementIndex
+  ) {
+    return false;
+  }
   return true;
 }
 
@@ -118,7 +130,7 @@ export class ScenarioController {
     operation: OperationRef,
     type: "ok" | "fail" | "info",
     value?: unknown,
-    outcome?: { actual?: "committed" | "not-committed" | "unknown"; observed?: "success" | "definite-failure" | "indeterminate"; detail?: string },
+    outcome?: OutcomeMetadata,
   ): void {
     this.history.complete(operation, type, value, outcome);
   }
