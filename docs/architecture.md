@@ -90,6 +90,60 @@ unknown               indeterminate
 
 When an emulated provider commits a side effect and CloudFault drops the response, the history can record privileged reality (`actual=committed`) while the application receives only the indeterminate network failure. When proxying a real provider and CloudFault cannot establish reality, `actual=unknown` remains honest.
 
+## The privileged oracle
+
+`actual` is only worth recording if it was *established*. `OutcomeOracle`
+(`@gmacko/cloudfault`) is the seam that establishes it:
+
+```ts
+interface OutcomeOracle {
+  readonly name?: string;
+  outcomeFor(token: OperationToken): Promise<PrivilegedOutcome | undefined>;
+  versionOf?(resource: string): Promise<number | undefined>;
+  snapshot?(): Promise<unknown>;
+  reset?(): Promise<void>;
+}
+
+interface PrivilegedOutcome {
+  actual: ActualOutcome;                       // the provider's own answer
+  observed?: ObservedOutcome;                  // what it let the caller see
+  version?: number;                            // provider-side commit ordering
+  applied?: readonly AppliedSubOperation[];    // which sub-operations landed
+  evidence?: Record<string, unknown>;          // rows_written, etag, changes...
+}
+```
+
+**The token is caller-minted.** CloudFault mints it before the request goes out
+and sends it on `x-emulate-operation`; the backend records against it *after*
+the effect is durable. This is not a detail: under `commit-then-response-lost`
+there is no response to read a correlation id off, so a response-minted token
+could not answer the only question worth asking.
+
+**An oracle that cannot answer says so.** `outcomeFor()` resolving to
+`undefined` — an unknown token, an unreachable emulator, a malformed body —
+degrades to `actual: "unknown"`. It never degrades to `committed`.
+
+Every outcome records where `actual` came from:
+
+```text
+oracle    a privileged backend was asked and answered
+declared  the injected fault defines it, because CloudFault chose the moment
+          of failure itself (it cut the wire after a call that had returned)
+inferred  deduced from an observable proxy such as a 2xx status
+unknown   nothing established it
+```
+
+`inferred` is where the old behaviour lives, now labelled rather than hidden: a
+200 implies durability for some backends and not for others (Slack and Shopify
+report application errors with HTTP 200), and a 500 does not imply the write
+did not land. An oracle overrules both.
+
+Two implementations ship: `RecordingOutcomeOracle` for in-process backends, and
+`httpOutcomeOracle()` (`@gmacko/cloudfault/adapter-sdk/emulate`) for an emulator
+serving `GET /_cloudfault/outcome/:token`, `/version/:resource`, `/snapshot` and
+`POST /_cloudfault/reset`. `postFaultPlan()` drives the matching control plane,
+and surfaces the emulator's contract-probe refusal rather than swallowing it.
+
 ## Operation identity
 
 Faults cannot be addressed as "the third fetch" if CloudFault expects repeatable exploration. `ScenarioController` and `ExecutionIndexer` assign a context-relative identity using logical target, operation, resource, parent operation, callsite, and occurrence.

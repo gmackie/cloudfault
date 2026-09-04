@@ -1,10 +1,16 @@
 import {
+  askOracle,
+  mintOperationToken,
+  OPERATION_TOKEN_HEADER,
+  outcomeMetadata,
   ScenarioController,
   type ActualOutcome,
   type Fault,
   type FaultPhase,
   type ObservedOutcome,
   type OperationRef,
+  type OperationToken,
+  type OutcomeOracle,
   type Perturbation,
 } from "@cloudfault/core";
 
@@ -426,6 +432,27 @@ export interface AdapterRuntimeOptions {
   upstream: (request: Request) => Promise<Response>;
   process?: string | number | ((request: Request, operation: SemanticOperation) => string | number);
   parentId?: string;
+  /**
+   * A privileged backend that can be *asked* what actually happened.
+   *
+   * Without one, `actual` is whatever the fault declares (sound only where
+   * CloudFault chose the moment of failure), or a deduction from the upstream
+   * status, or `unknown`. With one, it is the backend's own answer and the
+   * history says so via `actualSource: "oracle"`.
+   */
+  oracle?: OutcomeOracle;
+  /**
+   * Mints the correlation token sent with each classified request. Defaults to
+   * minting one whenever an oracle is configured; return `undefined` to skip
+   * the oracle for a particular operation.
+   *
+   * The token is minted *before* the request is sent. That is the whole point:
+   * under commit-then-response-lost there is no response to read a correlation
+   * id off, so only a caller-minted token can still be asked about.
+   */
+  mintToken?: (request: Request, operation: SemanticOperation) => OperationToken | undefined;
+  /** Header the token travels on. Defaults to `x-emulate-operation`. */
+  tokenHeader?: string;
 }
 
 function responseFromFault(faultValue: Fault): Response | undefined {
@@ -446,6 +473,13 @@ function responseFromFault(faultValue: Fault): Response | undefined {
   return undefined;
 }
 
+/** Clone a Request with one extra header, preserving method/body/credentials. */
+function withHeader(request: Request, name: string, value: string): Request {
+  const headers = new Headers(request.headers);
+  headers.set(name, value);
+  return new Request(request, { headers });
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
 }
@@ -461,6 +495,9 @@ export class AdapterRuntime {
   readonly #upstream: (request: Request) => Promise<Response>;
   readonly #process: AdapterRuntimeOptions["process"];
   readonly #parentId?: string;
+  readonly #oracle?: OutcomeOracle;
+  readonly #mintToken?: AdapterRuntimeOptions["mintToken"];
+  readonly #tokenHeader: string;
   #operationId = 0;
 
   constructor(options: AdapterRuntimeOptions) {
@@ -469,14 +506,27 @@ export class AdapterRuntime {
     this.#upstream = options.upstream;
     this.#process = options.process ?? "external";
     this.#parentId = options.parentId;
+    this.#oracle = options.oracle;
+    this.#mintToken = options.mintToken
+      ?? (options.oracle ? () => mintOperationToken() : undefined);
+    this.#tokenHeader = options.tokenHeader ?? OPERATION_TOKEN_HEADER;
+  }
+
+  /** The oracle answer, or undefined. Never a guess: see `askOracle`. */
+  #ask(token: OperationToken | undefined) {
+    return askOracle(this.#oracle, token);
   }
 
   async fetch(input: Request | string | URL, init?: RequestInit): Promise<Response> {
-    const request = input instanceof Request ? input : new Request(input, init);
-    const classified = this.#registry.classify(request);
-    if (!classified) return this.#upstream(request);
+    const original = input instanceof Request ? input : new Request(input, init);
+    const classified = this.#registry.classify(original);
+    if (!classified) return this.#upstream(original);
 
     const { adapter, match } = classified;
+    // Minted before anything is sent, so the attempt stays askable even when
+    // CloudFault destroys the response it would otherwise have read it from.
+    const token = this.#mintToken?.(original, match.operation);
+    const request = token ? withHeader(original, this.#tokenHeader, token) : original;
     const process = typeof this.#process === "function"
       ? this.#process(request, match.operation)
       : this.#process ?? "external";
@@ -488,6 +538,7 @@ export class AdapterRuntime {
       adapter: adapter.manifest.name,
       resource: match.operation.resource,
       parentId: this.#parentId,
+      token,
     }, {
       method: request.method,
       url: request.url,
@@ -509,10 +560,13 @@ export class AdapterRuntime {
       if (perturbation && "phase" in perturbation) {
         const immediate = responseFromFault(perturbation);
         if (immediate) {
-          this.#controller.complete(operation, "fail", { status: immediate.status }, {
-            actual: perturbation.actualOutcome ?? "not-committed",
-            observed: perturbation.observedOutcome ?? "definite-failure",
-          });
+          this.#controller.complete(operation, "fail", { status: immediate.status }, outcomeMetadata(
+            await this.#ask(token),
+            {
+              observed: perturbation.observedOutcome ?? "definite-failure",
+              declared: perturbation.actualOutcome ?? "not-committed",
+            },
+          ));
           return immediate;
         }
 
@@ -520,6 +574,9 @@ export class AdapterRuntime {
           this.#controller.complete(operation, "fail", undefined, {
             actual: "not-committed",
             observed: "definite-failure",
+            // Nothing was sent, so nothing could have happened. Establishing
+            // that needs no oracle.
+            actualSource: "declared",
             detail: "timeout before provider request was sent",
           });
           throw new CloudFaultInjectedError("CloudFault injected timeout before send", perturbation, { cause: undefined });
@@ -532,15 +589,18 @@ export class AdapterRuntime {
 
         if (perturbation.kind === "malformed-json") {
           const response = await upstream();
-          this.#controller.complete(operation, "info", { upstreamStatus: response.status }, {
-            actual: match.operation.effect === "query"
-              ? "unknown"
-              : perturbation.actualOutcome === "not-committed"
-                ? "not-committed"
-                : "committed",
-            observed: "indeterminate",
-            detail: "malformed-json",
-          });
+          // Truncated JSON is exactly where an oracle earns its keep: the bytes
+          // the caller never received may well have said `success: true`. Only
+          // a privileged backend can say. Absent one this stays `unknown`,
+          // which is what `malformedJson()` itself documents.
+          this.#controller.complete(operation, "info", { upstreamStatus: response.status }, outcomeMetadata(
+            await this.#ask(token),
+            {
+              observed: "indeterminate",
+              declared: perturbation.actualOutcome,
+              detail: "malformed-json",
+            },
+          ));
           const headers = new Headers(response.headers);
           headers.set("content-type", "application/json");
           return new Response('{"cloudfault":', { status: response.status, statusText: response.statusText, headers });
@@ -548,13 +608,21 @@ export class AdapterRuntime {
 
         if (perturbation.kind === "commit-then-timeout" || perturbation.kind === "commit-then-disconnect") {
           const response = await upstream();
-          // Consuming/cloning the response is intentionally unnecessary: a successful
-          // upstream response is sufficient evidence for emulated/sandbox backends.
-          this.#controller.complete(operation, "info", { upstreamStatus: response.status }, {
-            actual: perturbation.actualOutcome ?? "committed",
-            observed: "indeterminate",
-            detail: perturbation.kind,
-          });
+          // The response is deliberately not consumed: the caller is about to be
+          // told the transport failed. What actually happened is asked of the
+          // oracle by the token that was minted before the request went out. If
+          // there is no oracle, the fault's own declaration stands -- sound here
+          // only because CloudFault chose this moment itself, after a call that
+          // returned. It is labelled `declared`, not `oracle`, so the difference
+          // survives into the history.
+          this.#controller.complete(operation, "info", { upstreamStatus: response.status }, outcomeMetadata(
+            await this.#ask(token),
+            {
+              observed: "indeterminate",
+              declared: perturbation.actualOutcome,
+              detail: perturbation.kind,
+            },
+          ));
           throw new CloudFaultIndeterminateError(
             perturbation.kind === "commit-then-timeout"
               ? "CloudFault injected timeout after provider commit"
@@ -566,17 +634,23 @@ export class AdapterRuntime {
       }
 
       const response = await upstream();
-      this.#controller.complete(operation, response.ok ? "ok" : "fail", { status: response.status }, {
-        actual: match.operation.effect === "query" ? "unknown" : response.ok ? "committed" : "unknown",
-        observed: response.ok ? "success" : "definite-failure",
-      });
+      this.#controller.complete(operation, response.ok ? "ok" : "fail", { status: response.status }, outcomeMetadata(
+        await this.#ask(token),
+        {
+          observed: response.ok ? "success" : "definite-failure",
+          // A 2xx is a deduction, not privileged knowledge: it is sound for a
+          // backend whose success implies durability and unsound for one that
+          // reports application errors with HTTP 200. Labelled `inferred`.
+          inferred: match.operation.effect === "query" ? "unknown" : response.ok ? "committed" : "unknown",
+        },
+      ));
       return response;
     } catch (error) {
       if (error instanceof CloudFaultIndeterminateError || error instanceof CloudFaultInjectedError) throw error;
-      this.#controller.complete(operation, "info", { error: error instanceof Error ? error.message : String(error) }, {
-        actual: "unknown",
-        observed: "indeterminate",
-      });
+      this.#controller.complete(operation, "info", { error: error instanceof Error ? error.message : String(error) }, outcomeMetadata(
+        await this.#ask(token),
+        { observed: "indeterminate" },
+      ));
       throw error;
     }
   }

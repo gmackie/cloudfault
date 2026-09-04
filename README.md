@@ -25,7 +25,7 @@ The outcome model is deliberately three-valued:
 SUCCESS | DEFINITE FAILURE | INDETERMINATE
 ```
 
-An indeterminate operation becomes a Jepsen-style `info` completion. When a stateful emulator/test backend has privileged knowledge, CloudFault records the provider’s actual outcome separately from what the application observed.
+An indeterminate operation becomes a Jepsen-style `info` completion. When a stateful emulator/test backend has privileged knowledge, CloudFault **asks it** — through the `OutcomeOracle` seam — and records the provider’s actual outcome separately from what the application observed. Every recorded outcome carries an `actualSource` (`oracle` / `declared` / `inferred` / `unknown`) so an answer is never mistaken for a deduction, and an oracle that cannot answer degrades to `unknown` rather than to a guess.
 
 ## Current status
 

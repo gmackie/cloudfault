@@ -109,6 +109,32 @@ real upstream via MSW bypass
 
 A backend that CloudFault controls can provide privileged commit knowledge. A proxied real provider may only allow `actual=unknown`, which must remain unknown in the history.
 
+"Can provide" is now a real interface rather than an aspiration. Pass an
+`OutcomeOracle` to `AdapterRuntime` (or to `createD1FaultProxy` /
+`createR2FaultProxy`) and CloudFault will *ask* it instead of deducing:
+
+```ts
+const backend = new MyEmulatorBackend();
+
+const runtime = new AdapterRuntime({
+  registry,
+  controller,
+  upstream: emulateBackend(backend),
+  oracle: backend.oracle,   // outcomeFor(token) -> PrivilegedOutcome | undefined
+});
+```
+
+CloudFault mints a correlation token before each classified request and sends it
+on `x-emulate-operation`. Your backend records the durable effect against that
+token *after* it is durable, and answers `outcomeFor()`. Three rules:
+
+1. **Record after, never before.** The token is a question about what happened,
+   not a promise about what will.
+2. **Never infer.** If you have no record of a token, return `undefined` (or
+   404). CloudFault turns that into `actual: "unknown"`, which is correct.
+3. **Never derive `actual` from your own status code.** That is the deduction
+   the oracle exists to replace.
+
 ## Plugin packaging
 
 A community package can export one adapter:

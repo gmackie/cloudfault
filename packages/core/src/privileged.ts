@@ -150,12 +150,12 @@ export function outcomeMetadata(
       evidence: privileged.evidence,
     };
   }
-  const actual: ActualOutcome = options.declared ?? options.inferred ?? "unknown";
-  const source: ActualOutcomeSource = options.declared
-    ? "declared"
-    : options.inferred
-      ? "inferred"
-      : "unknown";
+  // A declared or inferred `"unknown"` is not an answer, so it does not earn a
+  // provenance either: "nobody established this" is the whole content of it.
+  const declared = options.declared === "unknown" ? undefined : options.declared;
+  const inferred = options.inferred === "unknown" ? undefined : options.inferred;
+  const actual: ActualOutcome = declared ?? inferred ?? "unknown";
+  const source: ActualOutcomeSource = declared ? "declared" : inferred ? "inferred" : "unknown";
   return {
     actual,
     observed: options.observed,

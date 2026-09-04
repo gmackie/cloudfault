@@ -8,6 +8,7 @@ This file tracks the **remaining** work. The original implementation program is 
 
 - [x] Jepsen-style `invoke` / `ok` / `fail` / `info` history.
 - [x] Actual provider outcome separated from caller-observed outcome.
+- [x] `OutcomeOracle`: privileged backends are *asked* by caller-minted token rather than inferred, with `actualSource` provenance on every outcome and honest `unknown` when no answer exists.
 - [x] Operation lineage, parent/child relationships, retry identity, and context-relative execution indexes.
 - [x] Legal semantic variation separated from degradation faults.
 - [x] Causal graph + failure-witness extraction.
