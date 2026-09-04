@@ -44,6 +44,10 @@ CloudFault is an experimental but executable framework. The repository currently
 - portable local/remote execution backends and a versioned remote-agent protocol;
 - Cloudflare KV, D1, R2, Queue, Durable Object, Workflow, Scheduled, Service Binding, and observer-region semantics;
 - shape-preserving D1 and R2 degradation proxies, including committed-write/lost-response ambiguity;
+- **`D1Database.batch()` interposition** with statement-level selectors, and contract probes that are refused unless explicitly enabled;
+- a **privileged `OutcomeOracle`** asked by caller-minted token, with `oracle` / `declared` / `inferred` / `unknown` provenance on every recorded outcome;
+- **multi-event workloads** with per-event delivery faults and order/uniqueness/completeness checkers;
+- **bounded deterministic interleaving exploration** over declared suspension points;
 - direct Miniflare Queue/Scheduled lifecycle control including retries and DLQ transitions;
 - real workerd/Vitest/Miniflare integration fixtures;
 - a public semantic provider adapter/plugin SDK;
