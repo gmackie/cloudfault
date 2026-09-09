@@ -1,0 +1,5 @@
+# Ignored state inherited into new Worktrunk worktrees (wt step copy-ignored --require-include).
+# Only warm dependency/build state; never secrets.
+node_modules/
+dist/
+*.tsbuildinfo
