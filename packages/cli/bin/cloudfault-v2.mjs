@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { doctorProject, initProject, sourceFiles } from "../lib/project.mjs";
+import { color, fail, filePath, heading, label, pass, paint, warn } from "../lib/terminal.mjs";
 
 const core = () => import("@cloudfault/core");
 const cloudflare = () => import("@cloudfault/cloudflare");
@@ -128,14 +129,14 @@ async function runConfig(modulePath) {
   const execute = await executionForConfig(config, modulePath);
   const result = await exploreWithStrategy(faultPoints, execute, plannerOptions(config));
 
-  console.log(`Search strategy: ${result.plan.strategy}`);
-  console.log(`Planned scenarios: ${result.plan.scenarios.length}`);
+  console.log(`${label("Search strategy:")} ${result.plan.strategy}`);
+  console.log(`${label("Planned scenarios:")} ${result.plan.scenarios.length}`);
 
   if (!result.firstFailure) {
     const reports = await writeRunReports(config, result);
-    console.log(`CloudFault PASS — ${config.name ?? modulePath}`);
-    console.log(`Scenarios executed: ${result.runs.length + 1}`);
-    if (result.baseline) console.log(renderChecks(result.baseline.checks));
+    console.log(`${pass("CloudFault PASS")} — ${paint("bold", config.name ?? modulePath)}`);
+    console.log(`${label("Scenarios executed:")} ${result.runs.length + 1}`);
+    if (result.baseline) console.log(renderChecks(result.baseline.checks, { color }));
     if (reports.coverage) {
       console.log(`Dependency coverage: ${reports.coverage.exercised}/${reports.coverage.discovered} (${(reports.coverage.ratio * 100).toFixed(1)}%)`);
     }
@@ -163,13 +164,13 @@ async function runConfig(modulePath) {
   fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
   const reports = await writeRunReports(config, result, artifact);
 
-  console.log(renderFailureArtifact(artifact));
+  console.log(renderFailureArtifact(artifact, { color }));
   if (reports.coverage) {
     console.log(`\nDependency coverage: ${reports.coverage.exercised}/${reports.coverage.discovered} (${(reports.coverage.ratio * 100).toFixed(1)}%)`);
   }
-  console.log(`\nFailure artifact: ${artifactPath}`);
-  console.log(`HTML report: ${reports.paths.html}`);
-  console.log(`Replay: cloudfault replay ${artifactPath}`);
+  console.log(`\n${label("Failure artifact:")} ${filePath(artifactPath)}`);
+  console.log(`${label("HTML report:")} ${filePath(reports.paths.html)}`);
+  console.log(`${label("Replay:")} ${paint("bold", `cloudfault replay ${artifactPath}`)}`);
   process.exitCode = 1;
 }
 
@@ -197,7 +198,7 @@ async function replay(file) {
   const { checksFailed, parseFailureArtifact, renderChecks, renderTimeline } = await core();
   const artifact = parseFailureArtifact(fs.readFileSync(path.resolve(file), "utf8"));
   if (!artifact.replay?.module) {
-    console.log(renderTimeline(artifact.history));
+    console.log(renderTimeline(artifact.history, { color }));
     throw new Error("Artifact has no replay.module; timeline rendered but execution cannot be repeated");
   }
   const mod = await importModule(artifact.replay.module);
@@ -211,22 +212,22 @@ async function replay(file) {
     perturbations,
   };
   const result = await execute(scenario, artifact.replay.args);
-  console.log(`CloudFault replay — ${artifact.testName}\n`);
-  console.log(renderChecks(result.checks));
-  console.log("\nTimeline:");
-  console.log(renderTimeline(result.history));
+  console.log(`${heading("CloudFault replay")} — ${paint("bold", artifact.testName)}\n`);
+  console.log(renderChecks(result.checks, { color }));
+  console.log(`\n${heading("Timeline:")}`);
+  console.log(renderTimeline(result.history, { color }));
   if (checksFailed(result.checks)) {
-    console.log("\nREPRODUCED");
+    console.log(`\n${fail("REPRODUCED")}`);
     process.exitCode = 1;
   } else {
-    console.log("\nNOT REPRODUCED");
+    console.log(`\n${warn("NOT REPRODUCED")}`);
     process.exitCode = 2;
   }
 }
 
 async function timeline(file) {
   const { parseFailureArtifact, renderFailureArtifact } = await core();
-  console.log(renderFailureArtifact(parseFailureArtifact(fs.readFileSync(path.resolve(file), "utf8"))));
+  console.log(renderFailureArtifact(parseFailureArtifact(fs.readFileSync(path.resolve(file), "utf8")), { color }));
 }
 
 async function inspectWrangler(file, sourceRoot) {
@@ -273,7 +274,7 @@ async function listAdapters() {
 function doctor(target) {
   const report = doctorProject(target ?? process.cwd());
   console.log(`CloudFault doctor — ${report.project.root}\n`);
-  for (const check of report.checks) console.log(`${check.valid ? "PASS" : "WARN"} ${check.name.padEnd(28)} ${check.detail}`);
+  for (const check of report.checks) console.log(`${check.valid ? pass() : warn()} ${check.name.padEnd(28)} ${check.detail}`);
   console.log(`\nBindings: ${report.project.topology?.bindings.length ?? 0}`);
   console.log(`Detected adapters: ${report.project.adapters.map((item) => item.adapter).join(", ") || "none"}`);
   console.log(`Recommendations: ${report.project.recommendations.length}`);
@@ -334,12 +335,13 @@ async function runDemo() {
 
   const combined = await execute(original);
   const minimal = await minimizeFailureSet(original, async (candidate) => (await execute(candidate)).failed);
-  console.log("CloudFault — systematic distributed-correctness demo\n");
-  console.log("Minimal Failure Set:");
-  for (const item of minimal.minimal) console.log(`  - ${item.kind}: ${item.description}`);
-  console.log(`\nFinal charges: ${combined.state.charges}`);
-  console.log("\nHistory:");
-  console.log(renderTimeline(combined.history));
+  console.log(`${paint("bold", "CloudFault")} — systematic distributed-correctness demo\n`);
+  console.log(heading("Minimal Failure Set:"));
+  for (const item of minimal.minimal) console.log(`  - ${paint("magenta", item.kind)}: ${item.description}`);
+  const charges = combined.state.charges;
+  console.log(`\n${label("Final charges:")} ${charges > 1 ? fail(String(charges)) : pass(String(charges))}`);
+  console.log(`\n${heading("History:")}`);
+  console.log(renderTimeline(combined.history, { color }));
 }
 
 const [command, ...args] = process.argv.slice(2);
