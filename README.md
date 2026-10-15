@@ -102,6 +102,8 @@ Anything a consumer sees — the README, `docs/`, and the config that
 
 ## Development
 
+Use npm 11 or newer (`npm install --global npm@11` on Node 20/22): npm 10 crashes resolving this workspace's dev dependencies.
+
 ```bash
 npm install
 npm test              # build + unit + workerd integration + Workers Vitest

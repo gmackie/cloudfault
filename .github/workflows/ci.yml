@@ -14,6 +14,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # npm 10 (bundled with Node 22) crashes resolving the vitest peer set
+      # ("Cannot read properties of null (reading 'edgesOut')"). npm 11 resolves
+      # it; deps stay unpinned so upstream drift is still caught.
+      - run: npm install --global npm@11
+      - run: npm --version
       - run: npm install --no-audit --no-fund
       - run: npm run check-versions
       - run: npm test
