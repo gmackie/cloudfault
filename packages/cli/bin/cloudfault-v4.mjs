@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
+import { color, filePath, label, pass, paint } from "../lib/terminal.mjs";
 
 const core = () => import("@cloudfault/core");
 
@@ -136,11 +137,11 @@ async function runModern(modulePath) {
   result.plan = plan;
   await persistGuidance(guidanceState, result);
 
-  console.log(`Search strategy: ${plan.strategy}`);
-  console.log(`Planned scenarios: ${plan.scenarios.length}`);
-  console.log(`Executed scenarios: ${result.runs.length}`);
-  console.log(`Concurrency: ${result.execution.concurrency}`);
-  console.log(`Estimated cost: ${result.execution.estimatedCost.toFixed(2)}`);
+  console.log(`${label("Search strategy:")} ${plan.strategy}`);
+  console.log(`${label("Planned scenarios:")} ${plan.scenarios.length}`);
+  console.log(`${label("Executed scenarios:")} ${result.runs.length}`);
+  console.log(`${label("Concurrency:")} ${result.execution.concurrency}`);
+  console.log(`${label("Estimated cost:")} ${result.execution.estimatedCost.toFixed(2)}`);
   if (result.execution.skipped.length) {
     const counts = Object.groupBy(result.execution.skipped, (item) => item.reason);
     console.log(`Budget/stopped scenarios: ${result.execution.skipped.length} (${Object.entries(counts).map(([reason, items]) => `${reason}=${items?.length ?? 0}`).join(", ")})`);
@@ -148,8 +149,8 @@ async function runModern(modulePath) {
 
   if (!result.firstFailure) {
     const reports = await writeReports(config, result);
-    console.log(`CloudFault PASS — ${config.name ?? modulePath}`);
-    if (result.baseline) console.log(renderChecks(result.baseline.checks));
+    console.log(`${pass("CloudFault PASS")} — ${paint("bold", config.name ?? modulePath)}`);
+    if (result.baseline) console.log(renderChecks(result.baseline.checks, { color }));
     if (reports.coverage) console.log(`Dependency coverage: ${reports.coverage.exercised}/${reports.coverage.discovered} (${(reports.coverage.ratio * 100).toFixed(1)}%)`);
     return;
   }
@@ -176,10 +177,10 @@ async function runModern(modulePath) {
   const artifactPath = path.join(failureDirectory, `${stamp}-${safeFilePart(artifact.testName)}.json`);
   fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
   const reports = await writeReports(config, result, artifact);
-  console.log(renderFailureArtifact(artifact));
-  console.log(`\nFailure artifact: ${artifactPath}`);
-  console.log(`HTML report: ${reports.paths.html}`);
-  console.log(`Replay: cloudfault replay ${artifactPath}`);
+  console.log(renderFailureArtifact(artifact, { color }));
+  console.log(`\n${label("Failure artifact:")} ${filePath(artifactPath)}`);
+  console.log(`${label("HTML report:")} ${filePath(reports.paths.html)}`);
+  console.log(`${label("Replay:")} ${paint("bold", `cloudfault replay ${artifactPath}`)}`);
   process.exitCode = 1;
 }
 
