@@ -55,6 +55,12 @@ jobs:
           node-version: 22
           registry-url: "https://registry.npmjs.org"
 
+      # npm 10 (bundled with Node 22) crashes resolving the vitest peer set
+      # ("Cannot read properties of null (reading 'edgesOut')"). npm 11 resolves
+      # it; deps stay unpinned so upstream drift is still caught.
+      - name: Upgrade npm
+        run: npm install --global npm@11 && npm --version
+
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
