@@ -9,23 +9,35 @@ It is not a random “make 5% of requests fail” chaos library. CloudFault buil
 1. the **Minimal Failure Set** — the smallest set of perturbations required to reproduce the bug; and
 2. the **minimal workload** — the smallest client/event sequence that still exposes it.
 
-```text
-legal stale observer state
-        +
-payment provider commits -> response lost
-        +
-application retry
-        =
-duplicate financial effect
-```
+<p align="center">
+  <img src="docs/media/search-pipeline.svg" width="880" alt="CloudFault's pipeline: a fault space of legal and degraded perturbations is planned into bounded scenarios, executed in real workerd, recorded as Jepsen-style histories, checked against business invariants, and minimized to the smallest fault set and workload that still fail.">
+</p>
 
-The outcome model is deliberately three-valued:
+The bug class it looks for is the one no single fault produces. In the [checkout fixture](examples/checkout), a legal stale KV read alone is harmless and a lost payment response alone is harmless; together, with the application's retry, they charge the customer twice:
 
-```text
-SUCCESS | DEFINITE FAILURE | INDETERMINATE
-```
+<p align="center">
+  <img src="docs/media/duplicate-charge.svg" width="880" alt="Sequence diagram: the Worker reads a stale PENDING order from KV, charges with key A, the charge commits but the response is lost, the Worker retries with a fresh key B and a second charge commits. at-most-one-new-charge fails with 2 charges; the Minimal Failure Set is the stale read plus the lost response.">
+</p>
+
+The outcome model is deliberately three-valued — `SUCCESS | DEFINITE FAILURE | INDETERMINATE`:
+
+<p align="center">
+  <img src="docs/media/outcomes.svg" width="880" alt="An operation completes as SUCCESS (ok), DEFINITE FAILURE (fail), or INDETERMINATE (info). For indeterminate operations CloudFault asks the OutcomeOracle and records actual committed, observed indeterminate, actualSource oracle; an oracle that cannot answer yields unknown, never a guess.">
+</p>
 
 An indeterminate operation becomes a Jepsen-style `info` completion. When a stateful emulator/test backend has privileged knowledge, CloudFault **asks it** — through the `OutcomeOracle` seam — and records the provider’s actual outcome separately from what the application observed. Every recorded outcome carries an `actualSource` (`oracle` / `declared` / `inferred` / `unknown`) so an answer is never mistaken for a deduction, and an oracle that cannot answer degrades to `unknown` rather than to a guess.
+
+## What a report looks like
+
+`cloudfault run` against the checkout fixture, in real workerd: three scenarios, one invariant failure, the two-fault Minimal Failure Set, the causal timeline, and a deterministic replay.
+
+<p align="center">
+  <a href="docs/media/report.webm"><img src="docs/media/report.png" width="880" alt="Terminal output of cloudfault run ./examples/checkout/scenario.mjs: FAIL at-most-one-new-charge, expected at most 1 new charge, observed 2; Minimal Failure Set of the stale ORDER_STATE read and the PAYMENTS commit-timeout; a four-event timeline; then cloudfault replay printing REPRODUCED."></a>
+  <br>
+  <sub>▶ <a href="docs/media/report.webm">Watch the recording (report.webm, 27 s)</a></sub>
+</p>
+
+The recording and the diagrams live in [`docs/media`](docs/media). The diagrams are animated SVGs that hold still under `prefers-reduced-motion: reduce`. Regenerate the recording with `npm run media:report` (needs [VHS](https://github.com/charmbracelet/vhs) and ffmpeg).
 
 ## Current status
 
