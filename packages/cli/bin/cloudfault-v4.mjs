@@ -6,6 +6,12 @@ import { color, filePath, label, pass, paint } from "../lib/terminal.mjs";
 
 const core = () => import("@cloudfault/core");
 
+/** A path relative to the working directory when it is inside it, else absolute. */
+function displayPath(file) {
+  const relative = path.relative(process.cwd(), file);
+  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file;
+}
+
 function safeFilePart(value) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || "failure";
 }
@@ -191,9 +197,9 @@ async function runModern(modulePath) {
   fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
   const reports = await writeReports(config, result, artifact);
   console.log(renderFailureArtifact(artifact, { color }));
-  console.log(`\n${label("Failure artifact:")} ${filePath(artifactPath)}`);
-  console.log(`${label("HTML report:")} ${filePath(reports.paths.html)}`);
-  console.log(`${label("Replay:")} ${paint("bold", `cloudfault replay ${artifactPath}`)}`);
+  console.log(`\n${label("Failure artifact:")} ${filePath(displayPath(artifactPath))}`);
+  console.log(`${label("HTML report:")} ${filePath(displayPath(reports.paths.html))}`);
+  console.log(`${label("Replay:")} ${paint("bold", `cloudfault replay ${displayPath(artifactPath)}`)}`);
   process.exitCode = 1;
 }
 
