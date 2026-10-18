@@ -33,8 +33,8 @@ function positiveInt(value: unknown, fallback: number): number {
 async function configureKv(rpc: RpcExport, perturbations: readonly Perturbation[]): Promise<void> {
   for (const perturbation of perturbations) {
     if (perturbation.kind === "stale-read") {
-      const key = typeof perturbation.metadata?.key === "string" ? perturbation.metadata.key : undefined;
-      if (!key) throw new Error(`${perturbation.id} requires metadata.key for the KV nemesis Worker`);
+      // Without a key the lag applies to the next read of any key.
+      const key = typeof perturbation.metadata?.key === "string" ? perturbation.metadata.key : "*";
       const region = typeof perturbation.metadata?.region === "string" ? perturbation.metadata.region : "cloudfault";
       const versionsBehind = positiveInt(perturbation.metadata?.versionsBehind, 1);
       const reads = positiveInt(perturbation.selector?.maxActivations, 1);
@@ -42,8 +42,7 @@ async function configureKv(rpc: RpcExport, perturbations: readonly Perturbation[
       if (!rpc.setLag) throw new Error("Configured KV nemesis Worker does not expose setLag()");
       await rpc.setLag(key, versionsBehind, reads, region);
     } else if (perturbation.kind === "stale-negative-read") {
-      const key = typeof perturbation.metadata?.key === "string" ? perturbation.metadata.key : undefined;
-      if (!key) throw new Error(`${perturbation.id} requires metadata.key for stale negative reads`);
+      const key = typeof perturbation.metadata?.key === "string" ? perturbation.metadata.key : "*";
       const region = typeof perturbation.metadata?.region === "string" ? perturbation.metadata.region : "cloudfault";
       const reads = positiveInt(perturbation.selector?.maxActivations, 1);
       await rpc.setObserver?.(region);

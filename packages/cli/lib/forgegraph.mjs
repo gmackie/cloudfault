@@ -2,16 +2,17 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { STARTER_BINDING_TYPES, generateStarterConfig, inspectRepository, starterFaultPoints } from "./project.mjs";
+import { STARTER_BINDING_TYPES, configCrons, generateStarterConfig, inspectRepository, starterFaultPoints } from "./project.mjs";
 import { fail, filePath, heading, label, pass, warn } from "./terminal.mjs";
 
 const forgegraph = () => import("@cloudfault/forgegraph");
 const core = () => import("@cloudfault/core");
 const cloudflare = () => import("@cloudfault/cloudflare");
+const smokeModule = () => import("@cloudfault/cloudflare/smoke");
 
 // The same search shape the generated starter config declares.
 const BASELINE_PLAN = { strategy: "hybrid", maxDepth: 2, maxScenarios: 100 };
-const NOT_EXECUTED = "starter execute() is not implemented, so nothing was executed";
+const NOT_EXECUTED = "not executed (pass --execute to run the smoke workload)";
 
 /** `--name value` / `--flag` parsing; repeated flags accumulate. */
 export function parseFlags(args) {
@@ -54,8 +55,54 @@ function git(cwd, ...args) {
   return execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, GIT_LFS_SKIP_SMUDGE: "1", GIT_TERMINAL_PROMPT: "0" } }).trim();
 }
 
-/** Static and baseline drafts for one checked-out repository. */
-export async function repositoryDrafts(root) {
+/**
+ * Runs each Worker's starter plan through the smoke execute(). A scenario runs
+ * only when every perturbation in it can be applied from outside the Worker;
+ * the rest, and every scenario of a Worker that cannot start, are skipped. So
+ * executed + skipped always equals the full starter plan.
+ */
+async function executeBaselines(workers, options = {}) {
+  const { executeScenarioPlan, planScenarios } = await core();
+  const { createSmokeExecute, SmokeHarnessError } = await smokeModule();
+  const cf = await cloudflare();
+  const runs = [];
+  const notRunnable = [];
+  let skipped = 0;
+  let planned = 0;
+  for (const worker of workers) {
+    const bindings = worker.topology?.bindings ?? [];
+    const plan = planScenarios(starterFaultPoints(bindings, cf), BASELINE_PLAN);
+    planned += plan.scenarios.length + 1;
+    if (!worker.topology) { skipped += plan.scenarios.length + 1; notRunnable.push(`${worker.config}: unreadable config`); continue; }
+    const smoke = createSmokeExecute({
+      config: worker.wrangler,
+      name: worker.topology.name,
+      bindings,
+      crons: configCrons(worker.topology),
+      requests: options.requests,
+      nemesisDirectory: options.nemesisDirectory,
+    });
+    const runnable = plan.scenarios.filter((scenario) => scenario.perturbations.every(smoke.supports));
+    skipped += plan.scenarios.length - runnable.length;
+    try {
+      const result = await executeScenarioPlan({ ...plan, scenarios: runnable }, smoke, { stopOnFirstFailure: false, minimizeFailure: false });
+      if (result.baseline) runs.push(result.baseline);
+      runs.push(...result.runs);
+      skipped += result.execution.skipped.length;
+    } catch (error) {
+      if (!(error instanceof SmokeHarnessError)) throw error;
+      skipped += runnable.length + 1;
+      notRunnable.push(`${worker.config}: ${error.message.split("\n")[0]}`);
+    }
+  }
+  return { runs, skipped, planned, notRunnable };
+}
+
+/**
+ * Static and baseline drafts for one checked-out repository. With `execute`,
+ * the baseline really runs (see executeBaselines); otherwise it is the plan.
+ */
+export async function repositoryDrafts(root, options = {}) {
   const { planEvidence, staticCoverageEvidence } = await forgegraph();
   const { planScenarios } = await core();
   const cf = await cloudflare();
@@ -74,8 +121,20 @@ export async function repositoryDrafts(root) {
   const planStarted = Date.now();
   const points = workers.flatMap((worker) => starterFaultPoints(worker.topology?.bindings ?? [], cf, workers.length > 1 ? `${worker.config}#` : ""));
   const plan = planScenarios(points, BASELINE_PLAN);
-  const baselineDraft = planEvidence(plan, { reason: NOT_EXECUTED, durationMs: Date.now() - planStarted });
-  return { workers, inspections, staticDraft, baselineDraft, plan };
+  let baselineDraft = planEvidence(plan, { reason: NOT_EXECUTED, durationMs: Date.now() - planStarted });
+  let execution;
+  if (options.execute && workers.length) {
+    const { runEvidence } = await forgegraph();
+    execution = await executeBaselines(workers, options);
+    if (execution.runs.length) {
+      baselineDraft = runEvidence("baseline", undefined, execution.runs, { suiteName: "cloudfault:baseline", skipped: execution.skipped });
+      baselineDraft.coverageSummary += `; smoke workload over ${execution.planned} planned scenarios`;
+    } else {
+      baselineDraft.coverageSummary = baselineDraft.coverageSummary.replace(NOT_EXECUTED, "no Worker could be started");
+    }
+    if (execution.notRunnable.length) baselineDraft.coverageSummary += `; not runnable: ${execution.notRunnable.join("; ")}`;
+  }
+  return { workers, inspections, staticDraft, baselineDraft, plan, execution };
 }
 
 /**
@@ -122,7 +181,7 @@ async function resolveChangeset(fg, flags, app, sha) {
 }
 
 /**
- * cloudfault evidence <static|baseline> [path] --app <slug> [--sha <sha>] [--changeset <id>] [--dry-run] [--allow-dispatch]
+ * cloudfault evidence <static|baseline> [path] --app <slug> [--sha <sha>] [--changeset <id>] [--dry-run] [--allow-dispatch] [--no-execute]
  * cloudfault evidence run <config> ... (handled by the v4 entrypoint, which owns execution)
  */
 export async function evidenceCommand(args, options = {}) {
@@ -136,7 +195,7 @@ export async function evidenceCommand(args, options = {}) {
   let drafts;
   if (suite === "run") drafts = [await options.runDraft(target)];
   else {
-    const { staticDraft, baselineDraft } = await repositoryDrafts(root);
+    const { staticDraft, baselineDraft } = await repositoryDrafts(root, { execute: suite === "baseline" && !flags["no-execute"] });
     drafts = [suite === "static" ? staticDraft : baselineDraft];
   }
 
@@ -182,7 +241,8 @@ async function sweepApp(fg, app, options) {
     const directory = path.join(options.workDir, app.slug);
     checkout(remote, branch, record.sha, directory);
 
-    const { workers, inspections, staticDraft, baselineDraft, plan } = await repositoryDrafts(directory);
+    const { workers, inspections, staticDraft, baselineDraft, plan, execution } = await repositoryDrafts(directory, { execute: options.execute });
+    if (execution) record.execution = { executed: execution.runs.length, skipped: execution.skipped, notRunnable: execution.notRunnable };
     record.workers = inspections;
     record.plannedScenarios = plan.scenarios.length;
     record.existingConfigs = workers.filter((worker) => fs.existsSync(path.join(worker.directory, "cloudfault.config.mjs"))).map((worker) => worker.config);
@@ -238,10 +298,11 @@ function sweepRow(record) {
 }
 
 /**
- * cloudfault fleet [--platform cloudflare-workers] [--app a,b] [--push] [--work-dir dir] [--out file] [--concurrency n]
+ * cloudfault fleet [--platform cloudflare-workers] [--app a,b] [--push] [--execute] [--work-dir dir] [--out file] [--concurrency n]
  *
  * Checks out each app's default-branch head into a scratch directory, runs the
- * static inspection and the baseline plan, and binds both to the changeset
+ * static inspection and the baseline plan (executed with --execute, which only
+ * works for Workers that start without an install or build step), and binds both to the changeset
  * whose head is that commit. Without --push nothing is posted.
  */
 export async function fleetCommand(args) {
@@ -257,7 +318,7 @@ export async function fleetCommand(args) {
   console.log(`${heading("CloudFault fleet sweep")} — ${apps.length} ${platform} apps${flags.push ? "" : " (dry run; pass --push to post evidence)"}`);
   console.log(`${label("Scratch checkouts:")} ${filePath(workDir)}\n`);
   console.log(label(`${"APP".padEnd(22)} ${"WKR".padStart(3)} ${"STATIC".padStart(7)} ${"PLAN".padStart(5)}  OUTCOME`));
-  const options = { push: Boolean(flags.push), workDir, gitBase: typeof flags["git-base"] === "string" ? flags["git-base"] : "https://git.forgegraf.com" };
+  const options = { push: Boolean(flags.push), execute: Boolean(flags.execute), workDir, gitBase: typeof flags["git-base"] === "string" ? flags["git-base"] : "https://git.forgegraf.com" };
   const records = await pool(apps, Number(flags.concurrency ?? 4), async (app) => {
     const record = await sweepApp(fg, app, options);
     console.log(sweepRow(record));

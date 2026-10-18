@@ -160,7 +160,7 @@ const STARTER_FAULTS = {
   kv: [["staleKvRead", { region: "remote", versionsBehind: 1 }], ["staleNegativeKvRead", "remote"]],
   d1: [["d1TransientNetworkError"], ["d1OperationTimeout"], ["d1CommitThenTimeout"]],
   r2: [["r2CapacityError"], ["r2CommitThenTimeout"]],
-  "queue-producer": QUEUE_FAULTS,
+  "queue-producer": [...QUEUE_FAULTS, ["queueProducerFailure"]],
   "queue-consumer": QUEUE_FAULTS,
   "durable-object": [["duplicateAlarmDelivery"], ["durableObjectReset"]],
   service: [["serviceTimeout"], ["serviceUnavailable"]],
@@ -200,13 +200,63 @@ export function starterFaultPoints(bindings, cloudflare, prefix = "") {
   });
 }
 
+// Binding types whose faults createSmokeExecute can inject from outside the
+// Worker (it reroutes them through nemesis Workers); see cloudflare/src/smoke.ts.
+const SMOKE_INJECTABLE = new Set(["kv", "queue-producer"]);
+
+/** Cron triggers declared in a Wrangler config. */
+export function configCrons(topology) {
+  const crons = topology?.raw?.triggers?.crons;
+  return Array.isArray(crons) ? crons.filter((item) => typeof item === "string") : [];
+}
+
 export function generateStarterConfig(project) {
-  const points = (project.topology?.bindings ?? []).map(pointExpression).filter(Boolean);
-  const imports = STARTER_IMPORTS;
+  const bindings = project.topology?.bindings ?? [];
+  const points = bindings.map(pointExpression).filter(Boolean);
+  const inWorker = [...new Set(bindings.filter((binding) => STARTER_FAULTS[binding.type] && !SMOKE_INJECTABLE.has(binding.type)).map((binding) => `${binding.binding} (${binding.type})`))];
   const adapterComments = project.adapters.length
     ? `\n// Detected external adapters: ${project.adapters.map((item) => item.adapter).join(", ")}\n// Run \`cloudfault inspect ${project.wrangler ? path.basename(project.wrangler) : "wrangler.jsonc"}\` for evidence and recommendations.\n`
     : "";
-  return `import { defineCloudFault } from "@gmacko/cloudfault";\nimport {\n  ${imports.join(",\n  ")}\n} from "@gmacko/cloudfault/cloudflare";\n${adapterComments}\nexport const cloudfault = defineCloudFault({\n  name: ${JSON.stringify(project.topology?.name ?? "worker-correctness")},\n  // Hybrid runs depth-1 diagnostics first, then curated incidents/pairwise\n  // coverage and feedback-guided candidates without immediately exploding the\n  // full Cartesian product. Use \`cloudfault plan cloudfault.config.mjs\` to inspect it.\n  strategy: "hybrid",\n  maxDepth: 2,\n  maxScenarios: 100,\n  cache: "file",\n  faultPoints: [\n${points.map((item) => `    ${item},`).join("\n")}\n  ],\n\n  async execute(scenario) {\n    // Start createTestHarness()/Miniflare/Workers Vitest as appropriate, apply\n    // scenario perturbations, run a production-shaped workload, inspect\n    // privileged state, and return { scenario, history, checks, state }.\n    throw new Error("Implement execute(scenario)");\n  },\n});\n`;
+  const configFile = project.wrangler ? path.basename(project.wrangler) : "wrangler.jsonc";
+  const bindingList = bindings.map((binding) => `    { type: ${JSON.stringify(binding.type)}, binding: ${JSON.stringify(binding.binding)} },`).join("\n");
+  const skipped = inWorker.length
+    ? `  // Faults for ${inWorker.join(", ")} need CloudFault's proxies inside the\n  // Worker (createD1FaultProxy, createHyperdriveFaultProxy, ...), so the smoke\n  // execute() skips them. Wire those proxies in and write your own\n  // execute() to cover them.\n`
+    : "";
+  return `import { defineCloudFault } from "@gmacko/cloudfault";
+import {
+  ${STARTER_IMPORTS.join(",\n  ")}
+} from "@gmacko/cloudfault/cloudflare";
+import { createSmokeExecute } from "@gmacko/cloudfault/cloudflare/smoke";
+${adapterComments}
+// Starts this Worker from its Wrangler config, sends the requests below, fires
+// its cron triggers, and checks for 5xx responses and failed scheduled runs.
+// KV and Queue producer bindings are rerouted through nemesis Workers so their
+// faults really happen. Replace the requests with production-shaped traffic,
+// and add domain invariants by writing your own execute() around this one.
+const smoke = createSmokeExecute({
+  config: new URL(${JSON.stringify(`./${configFile}`)}, import.meta.url),
+  name: ${JSON.stringify(project.topology?.name)},
+  bindings: [
+${bindingList}
+  ],
+  crons: ${JSON.stringify(configCrons(project.topology))},
+  requests: [{ path: "/" }],
+});
+
+export const cloudfault = defineCloudFault({
+  name: ${JSON.stringify(project.topology?.name ?? "worker-correctness")},
+  // Hybrid runs depth-1 diagnostics first, then curated incidents/pairwise
+  // coverage and feedback-guided candidates without immediately exploding the
+  // full Cartesian product. Use \`cloudfault plan cloudfault.config.mjs\` to inspect it.
+  strategy: "hybrid",
+  maxDepth: 2,
+  maxScenarios: 100,
+${skipped}  faultPoints: smoke.applicableFaultPoints([
+${points.map((item) => `    ${item},`).join("\n")}
+  ]),
+  execute: smoke,
+});
+`;
 }
 
 export function initProject(target = process.cwd()) {
