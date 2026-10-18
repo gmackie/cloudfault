@@ -4,6 +4,8 @@ export * from "./kv.js";
 export * from "./queue.js";
 export * from "./d1.js";
 export * from "./r2.js";
+export * from "./hyperdrive.js";
+export * from "./images.js";
 export * from "./service.js";
 export * from "./durable-object.js";
 export * from "./workflow.js";
