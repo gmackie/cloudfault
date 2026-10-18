@@ -57,6 +57,10 @@
       "types": "./dist/fast-check/model-shrink.d.ts",
       "import": "./dist/fast-check/model-shrink.js"
     },
+    "./forgegraph": {
+      "types": "./dist/forgegraph/index.d.ts",
+      "import": "./dist/forgegraph/index.js"
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/core/index.js",
@@ -96,7 +100,8 @@
     "testing",
     "resilience",
     "idempotency",
-    "stripe"
+    "stripe",
+    "forgegraph"
   ],
   "engines": {
     "node": ">=20"
@@ -131,6 +136,7 @@
     "@cloudfault/cloudflare": "file:../cloudflare",
     "@cloudfault/core": "file:../core",
     "@cloudfault/fast-check": "file:../fast-check",
+    "@cloudfault/forgegraph": "file:../forgegraph",
     "@cloudfault/stripe": "file:../stripe"
   }
 }

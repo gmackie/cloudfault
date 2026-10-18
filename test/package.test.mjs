@@ -9,7 +9,7 @@ const root = path.resolve(import.meta.dirname, "..");
 const packageDir = path.join(root, "packages/cloudfault");
 const manifest = JSON.parse(fs.readFileSync(path.join(packageDir, "package.json"), "utf8"));
 
-const SUBPATHS = [".", "./cloudflare", "./stripe", "./adapter-sdk", "./adapters", "./fast-check"];
+const SUBPATHS = [".", "./cloudflare", "./stripe", "./adapter-sdk", "./adapters", "./fast-check", "./forgegraph"];
 
 test("the published package declares the public subpaths consumers depend on", () => {
   assert.equal(manifest.name, "@gmacko/cloudfault");

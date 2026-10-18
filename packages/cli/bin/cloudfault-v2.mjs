@@ -23,6 +23,9 @@ Commands:
   recommend [path]      Print semantics-grounded scenario/invariant suggestions
   adapters              List bundled unofficial semantic API adapters
   init [path]           Generate a project-aware starter config + recommendations
+  evidence <static|baseline|run> [path|config] --app <slug>
+                        Push CloudFault results to ForgeGraph as delivery evidence
+  fleet [--push]        Sweep every ForgeGraph Cloudflare Workers app (dry run by default)
   demo                  Run the stale-read + ambiguous-commit demo`;
 }
 

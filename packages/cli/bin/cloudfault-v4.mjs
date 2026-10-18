@@ -126,8 +126,8 @@ async function persistGuidance(guidanceState, result) {
   await guidanceState.store.save(guidanceState.guidance);
 }
 
-async function runModern(modulePath) {
-  const { createFailureArtifact, executeScenarioPlan, renderChecks, renderFailureArtifact } = await core();
+async function executeConfig(modulePath) {
+  const { executeScenarioPlan } = await core();
   const config = await loadConfig(modulePath);
   const faultPoints = await materializeFaultPoints(config);
   const execute = await executionForConfig(config, modulePath);
@@ -136,6 +136,19 @@ async function runModern(modulePath) {
   const result = await executeScenarioPlan(plan, execute, executionOptions(config));
   result.plan = plan;
   await persistGuidance(guidanceState, result);
+  return { config, plan, result };
+}
+
+/** Executes a config and maps the search to a ForgeGraph evidence draft. */
+async function runDraft(modulePath) {
+  const { runEvidence } = await import("@cloudfault/forgegraph");
+  const { config, result } = await executeConfig(modulePath);
+  return runEvidence(config.name ?? path.basename(modulePath), result.baseline, result.runs, { skipped: result.execution.skipped.length });
+}
+
+async function runModern(modulePath) {
+  const { createFailureArtifact, renderChecks, renderFailureArtifact } = await core();
+  const { config, plan, result } = await executeConfig(modulePath);
 
   console.log(`${label("Search strategy:")} ${plan.strategy}`);
   console.log(`${label("Planned scenarios:")} ${plan.scenarios.length}`);
@@ -207,6 +220,8 @@ const [command, ...args] = process.argv.slice(2);
 try {
   if (command === "run" && args[0]) await runModern(args[0]);
   else if (command === "plan" && args[0]) await planModern(args[0]);
+  else if (command === "evidence") await (await import("../lib/forgegraph.mjs")).evidenceCommand(args, { runDraft });
+  else if (command === "fleet") await (await import("../lib/forgegraph.mjs")).fleetCommand(args);
   else await import("./cloudfault-v3.mjs");
 } catch (error) {
   console.error(error instanceof Error ? error.stack ?? error.message : error);

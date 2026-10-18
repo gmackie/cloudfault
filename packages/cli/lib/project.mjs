@@ -23,13 +23,59 @@ export function sourceFiles(root) {
   return output;
 }
 
+const WRANGLER_NAMES = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"];
+// Test and fixture trees routinely carry throwaway Wrangler configs that are
+// not deployed Workers, so repository-wide discovery does not descend into them.
+const FIXTURE_DIRECTORIES = new Set(["test", "tests", "__tests__", "fixtures", "__fixtures__"]);
+
 export function findWrangler(root) {
-  const names = ["wrangler.jsonc", "wrangler.json", "wrangler.toml"];
-  for (const name of names) {
+  for (const name of WRANGLER_NAMES) {
     const candidate = path.join(root, name);
     if (fs.existsSync(candidate)) return candidate;
   }
   return undefined;
+}
+
+/** Every Worker in a repository: at most one Wrangler config per directory, in findWrangler order. */
+export function findWranglers(root) {
+  const output = [];
+  const visit = (directory) => {
+    const config = findWrangler(directory);
+    if (config) output.push(config);
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      if (!entry.isDirectory() || IGNORED.has(entry.name) || FIXTURE_DIRECTORIES.has(entry.name)) continue;
+      visit(path.join(directory, entry.name));
+    }
+  };
+  visit(path.resolve(root));
+  return output;
+}
+
+/**
+ * Reads a Wrangler config into its raw object form. JSON/JSONC needs nothing
+ * extra; TOML is read through Wrangler itself (an optional peer dependency),
+ * so it returns undefined when Wrangler is not installed.
+ */
+export function readWranglerConfig(file) {
+  if (!file.endsWith(".toml")) return discoverWranglerTopology(fs.readFileSync(file, "utf8"));
+  let wrangler;
+  try { wrangler = require("wrangler"); } catch { return undefined; }
+  return discoverWranglerTopology(wrangler.experimental_readRawConfig({ config: file }).rawConfig);
+}
+
+function detectAdapters(root) {
+  const findings = [];
+  for (const candidate of sourceFiles(root)) {
+    let source;
+    try { source = fs.readFileSync(candidate, "utf8"); } catch { continue; }
+    for (const finding of detectAdaptersFromSource(source)) {
+      findings.push({
+        ...finding,
+        evidence: finding.evidence.map((item) => `${path.relative(root, candidate)}:${item}`),
+      });
+    }
+  }
+  return mergeAdapterEvidence(findings);
 }
 
 export function detectProject(root = process.cwd()) {
@@ -38,23 +84,31 @@ export function detectProject(root = process.cwd()) {
     ? absolute
     : findWrangler(absolute);
   const projectRoot = wrangler ? path.dirname(wrangler) : absolute;
-  let topology;
-  if (wrangler && !wrangler.endsWith(".toml")) topology = discoverWranglerTopology(fs.readFileSync(wrangler, "utf8"));
+  const topology = wrangler ? readWranglerConfig(wrangler) : undefined;
 
-  const findings = [];
-  for (const candidate of sourceFiles(projectRoot)) {
-    let source;
-    try { source = fs.readFileSync(candidate, "utf8"); } catch { continue; }
-    for (const finding of detectAdaptersFromSource(source)) {
-      findings.push({
-        ...finding,
-        evidence: finding.evidence.map((item) => `${path.relative(projectRoot, candidate)}:${item}`),
-      });
-    }
-  }
-  const adapters = mergeAdapterEvidence(findings);
+  const adapters = detectAdapters(projectRoot);
   const recommendations = recommendCloudFaultCoverage(topology?.bindings ?? [], adapters);
   return { root: projectRoot, wrangler, topology, adapters, recommendations };
+}
+
+/**
+ * Every Worker in a repository (monorepos included), each with its topology
+ * and the provider adapters detected beneath its directory. A TOML config that
+ * cannot be read without Wrangler is kept, with `topology` undefined.
+ */
+export function inspectRepository(root = process.cwd()) {
+  const absolute = path.resolve(root);
+  return findWranglers(absolute).map((wrangler) => {
+    const directory = path.dirname(wrangler);
+    const topology = readWranglerConfig(wrangler);
+    return {
+      config: path.relative(absolute, wrangler),
+      directory,
+      wrangler,
+      topology,
+      adapters: detectAdapters(directory),
+    };
+  });
 }
 
 function resolvePackage(name) {
@@ -88,7 +142,7 @@ export function doctorProject(root = process.cwd()) {
     { name: "MSW outbound interception", valid: Boolean(dependencies.find((item) => item.name === "msw")?.version), detail: dependencies.find((item) => item.name === "msw")?.version ?? "optional/not installed" },
     { name: "fast-check generation", valid: Boolean(dependencies.find((item) => item.name === "fast-check")?.version), detail: dependencies.find((item) => item.name === "fast-check")?.version ?? "optional/not installed" },
   ];
-  const supportedBindingTypes = new Set(["kv", "d1", "r2", "queue-producer", "queue-consumer", "durable-object", "service", "workflow"]);
+  const supportedBindingTypes = new Set(Object.keys(STARTER_FAULTS));
   const unsupported = (project.topology?.bindings ?? []).filter((binding) => !supportedBindingTypes.has(binding.type));
   return {
     project,
@@ -99,40 +153,54 @@ export function doctorProject(root = process.cwd()) {
   };
 }
 
+// The starter fault set per binding type: [constructor, ...arguments after the binding name].
+// Both the generated config and in-process baseline planning read this one table.
+const QUEUE_FAULTS = [["duplicateQueueDelivery"], ["rebatchQueueDelivery"], ["queueConsumerFailure"]];
+const STARTER_FAULTS = {
+  kv: [["staleKvRead", { region: "remote", versionsBehind: 1 }], ["staleNegativeKvRead", "remote"]],
+  d1: [["d1TransientNetworkError"], ["d1OperationTimeout"], ["d1CommitThenTimeout"]],
+  r2: [["r2CapacityError"], ["r2CommitThenTimeout"]],
+  "queue-producer": QUEUE_FAULTS,
+  "queue-consumer": QUEUE_FAULTS,
+  "durable-object": [["duplicateAlarmDelivery"], ["durableObjectReset"]],
+  service: [["serviceTimeout"], ["serviceUnavailable"]],
+  workflow: [["workflowStepRetry"], ["workflowRetryDelay", 2000]],
+};
+export const STARTER_BINDING_TYPES = Object.keys(STARTER_FAULTS);
+const STARTER_IMPORTS = [...new Set(Object.values(STARTER_FAULTS).flat().map(([name]) => name))];
+
+function literal(value) {
+  if (value && typeof value === "object") return `{ ${Object.entries(value).map(([key, item]) => `${key}: ${literal(item)}`).join(", ")} }`;
+  return JSON.stringify(value);
+}
+
 function pointExpression(binding) {
+  const faults = STARTER_FAULTS[binding.type];
+  if (!faults) return undefined;
   const escaped = JSON.stringify(binding.binding);
-  switch (binding.type) {
-    case "kv":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [staleKvRead(${escaped}, { region: "remote", versionsBehind: 1 }), staleNegativeKvRead(${escaped}, "remote")] }`;
-    case "d1":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [d1TransientNetworkError(${escaped}), d1OperationTimeout(${escaped}), d1CommitThenTimeout(${escaped})] }`;
-    case "r2":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [r2CapacityError(${escaped}), r2CommitThenTimeout(${escaped})] }`;
-    case "queue-producer":
-    case "queue-consumer":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [duplicateQueueDelivery(${escaped}), rebatchQueueDelivery(${escaped}), queueConsumerFailure(${escaped})] }`;
-    case "durable-object":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [duplicateAlarmDelivery(${escaped}), durableObjectReset(${escaped})] }`;
-    case "service":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [serviceTimeout(${escaped}), serviceUnavailable(${escaped})] }`;
-    case "workflow":
-      return `{ id: ${escaped}, target: ${escaped}, choices: [workflowStepRetry(${escaped}), workflowRetryDelay(${escaped}, 2000)] }`;
-    default:
-      return undefined;
-  }
+  const choices = faults.map(([name, ...extra]) => `${name}(${[escaped, ...extra.map(literal)].join(", ")})`);
+  return `{ id: ${escaped}, target: ${escaped}, choices: [${choices.join(", ")}] }`;
+}
+
+/**
+ * The starter config's fault points, built in-process. `cloudflare` is the
+ * @cloudfault/cloudflare module; `prefix` keeps IDs unique across Workers.
+ */
+export function starterFaultPoints(bindings, cloudflare, prefix = "") {
+  return bindings.flatMap((binding) => {
+    const faults = STARTER_FAULTS[binding.type];
+    if (!faults) return [];
+    return [{
+      id: `${prefix}${binding.binding}`,
+      target: binding.binding,
+      choices: faults.map(([name, ...extra]) => cloudflare[name](binding.binding, ...extra)),
+    }];
+  });
 }
 
 export function generateStarterConfig(project) {
   const points = (project.topology?.bindings ?? []).map(pointExpression).filter(Boolean);
-  const imports = [
-    "staleKvRead", "staleNegativeKvRead",
-    "d1TransientNetworkError", "d1OperationTimeout", "d1CommitThenTimeout",
-    "r2CapacityError", "r2CommitThenTimeout",
-    "duplicateQueueDelivery", "rebatchQueueDelivery", "queueConsumerFailure",
-    "duplicateAlarmDelivery", "durableObjectReset",
-    "serviceTimeout", "serviceUnavailable",
-    "workflowStepRetry", "workflowRetryDelay",
-  ];
+  const imports = STARTER_IMPORTS;
   const adapterComments = project.adapters.length
     ? `\n// Detected external adapters: ${project.adapters.map((item) => item.adapter).join(", ")}\n// Run \`cloudfault inspect ${project.wrangler ? path.basename(project.wrangler) : "wrangler.jsonc"}\` for evidence and recommendations.\n`
     : "";

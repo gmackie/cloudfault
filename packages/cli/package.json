@@ -10,7 +10,8 @@
     "@cloudfault/core": "file:../core",
     "@cloudfault/cloudflare": "file:../cloudflare",
     "@cloudfault/stripe": "file:../stripe",
-    "@cloudfault/adapters": "file:../adapters"
+    "@cloudfault/adapters": "file:../adapters",
+    "@cloudfault/forgegraph": "file:../forgegraph"
   },
   "license": "MIT"
 }
