@@ -32,9 +32,9 @@ An indeterminate operation becomes a Jepsen-style `info` completion. When a stat
 `cloudfault run` against the checkout fixture, in real workerd: three scenarios, one invariant failure, the two-fault Minimal Failure Set, the causal timeline, and a deterministic replay.
 
 <p align="center">
-  <a href="docs/media/report.webm"><img src="docs/media/report.png" width="880" alt="Terminal output of cloudfault run ./examples/checkout/scenario.mjs: FAIL at-most-one-new-charge, expected at most 1 new charge, observed 2; Minimal Failure Set of the stale ORDER_STATE read and the PAYMENTS commit-timeout; a four-event timeline; then cloudfault replay printing REPRODUCED."></a>
+  <a href="docs/media/report.webm?raw=true"><img src="docs/media/report.png" width="880" alt="Terminal output of cloudfault run ./examples/checkout/scenario.mjs: FAIL at-most-one-new-charge, expected at most 1 new charge, observed 2; Minimal Failure Set of the stale ORDER_STATE read and the PAYMENTS commit-timeout; a four-event timeline; then cloudfault replay printing REPRODUCED."></a>
   <br>
-  <sub>▶ <a href="docs/media/report.webm">Watch the recording (report.webm, 27 s)</a></sub>
+  <sub>▶ <a href="docs/media/report.webm?raw=true">Watch the recording (report.webm, 27 s)</a></sub>
 </p>
 
 The recording and the diagrams live in [`docs/media`](docs/media). The diagrams are animated SVGs that hold still under `prefers-reduced-motion: reduce`. Regenerate the recording with `npm run media:report` (needs [VHS](https://github.com/charmbracelet/vhs) and ffmpeg).
