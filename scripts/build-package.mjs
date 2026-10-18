@@ -35,6 +35,7 @@ const LIBRARIES = {
   "@cloudfault/stripe": "stripe",
   "@cloudfault/adapters": "adapters",
   "@cloudfault/fast-check": "fast-check",
+  "@cloudfault/forgegraph": "forgegraph",
 };
 
 const SPECIFIER = /(\bfrom\s*|\bimport\s*\(\s*)(["'])(@cloudfault\/[a-z-]+)(\/[a-z-]+)?\2/g;

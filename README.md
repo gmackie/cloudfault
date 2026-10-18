@@ -57,7 +57,8 @@ CloudFault is an experimental but executable framework. The repository currently
 - shared webhook, OAuth, streaming, async-job, and rate-limit capability models;
 - provider-shaped signed webhook helpers;
 - **25 bundled unofficial provider adapters** with capability-aware semantic overlays; and
-- project discovery, `init`, `doctor`, planning, recommendations, semantic registry output, replay, and reporting from the CLI.
+- a **ForgeGraph evidence adapter** that publishes static coverage, baseline plans, and executed searches as delivery evidence, plus a fleet sweep over every ForgeGraph Cloudflare Workers app;
+- project discovery (monorepos and `wrangler.toml` included), `init`, `doctor`, planning, recommendations, semantic registry output, replay, and reporting from the CLI.
 
 Bundled adapters model a useful semantic subset. They do **not** claim to be complete provider emulators. An adapter can use synthetic responses, proxy a real sandbox/test API, sit over a stateful emulator such as `emulate`, or use a purpose-built backend such as the included Stripe fixture.
 
@@ -76,6 +77,7 @@ import { stripeAdapter } from "@gmacko/cloudfault/stripe";
 import { defineRulesAdapter } from "@gmacko/cloudfault/adapter-sdk";
 import { firstPartyAdapters } from "@gmacko/cloudfault/adapters";
 import { findScenarioCounterexample } from "@gmacko/cloudfault/fast-check";
+import { runEvidence, ForgeGraphClient } from "@gmacko/cloudfault/forgegraph";
 ```
 
 ## Repository layout
@@ -93,6 +95,7 @@ packages/cloudflare      Cloudflare semantics and workerd/Miniflare/MSW runtime 
 packages/stripe          Stripe semantic adapter + stateful in-memory payment backend             -> "./stripe"
 packages/adapters        bundled unofficial provider catalog + executable semantic overlays       -> "./adapters"
 packages/fast-check      property-testing bridge + workload/counterexample shrinking              -> "./fast-check"
+packages/forgegraph      ForgeGraph delivery-evidence mapping + API client                        -> "./forgegraph"
 packages/cli             developer CLI                                                            -> the `cloudfault` bin
 ```
 
@@ -147,6 +150,31 @@ npm run cloudfault -- semantics .cloudfault/provider-semantics.json
 npm run cloudfault -- contracts .cloudfault/semantic-contracts.json
 npm run cloudfault -- contract shopify
 ```
+
+## ForgeGraph evidence
+
+`@gmacko/cloudfault/forgegraph` maps CloudFault results to ForgeGraph `test_run` evidence and posts it to a changeset:
+
+| suite | source | status | counts |
+|-------|--------|--------|--------|
+| `cloudfault:static` | Wrangler bindings + detected provider adapters | `passed`; `cancelled` when no Worker is found | covered bindings and adapters pass, bindings without a semantic pack are skipped |
+| `cloudfault:baseline` | the starter fault plan (`hybrid`, depth 2, ≤100 scenarios) | `queued` | every planned scenario is skipped: planned, not executed |
+| `cloudfault:<name>` | an executed config (`evidence run`) | `passed` / `failed` | one test per scenario, baseline included; budget-skipped scenarios are skipped |
+
+```bash
+# credentials: FORGEGRAPH_TOKEN (+ FORGEGRAPH_SERVER) in CI, else `forge login`
+cloudfault evidence static . --app my-app            # changeset resolved from HEAD's SHA
+cloudfault evidence baseline . --app my-app --dry-run
+cloudfault evidence run ./cloudfault.config.mjs --app my-app --changeset <id>
+
+# every ForgeGraph cloudflare-workers app, checked out at its default-branch head in a scratch dir
+cloudfault fleet                 # dry run: prints the table, writes fleet-results.json
+cloudfault fleet --push          # posts evidence to each app's main-head changeset
+```
+
+Run IDs are `<suite>:<app>:<sha12>`, so rerunning a suite against the same commit updates its test run instead of adding one.
+
+Posting is guarded. ForgeGraph re-evaluates every non-manual delivery lane when a `passed`/`failed` run lands, so on a **merged** changeset whose repository has an `auto` or `approval_gated` lane, a push could create a deployment or an approval request for already-shipped code. `cloudfault evidence` refuses those pushes (exit code 2) unless given `--allow-dispatch`, and `fleet --push` holds every suite for such an app. Open changesets push normally: feeding their gates is the point.
 
 ## Search strategies
 
