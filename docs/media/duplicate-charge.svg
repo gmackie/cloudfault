@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 470" width="880" height="470" role="img" aria-labelledby="title desc">
+  <title id="title">Stale KV read plus a lost payment response plus a retry equals a duplicate charge</title>
+  <desc id="desc">Sequence diagram of the checkout fixture. The client posts a checkout to the Worker. The Worker reads order 812 from KV and, from a stale observer, sees PENDING. It charges the payment service with idempotency key A; the charge commits but the response is lost, so the Worker sees a timeout. The Worker retries with a fresh key B and a second charge commits. The invariant at-most-one-new-charge fails with two charges. Either fault alone is harmless; CloudFault reduces the failure to the two-fault Minimal Failure Set.</desc>
+  <style>
+    .card { fill: #0f1114; stroke: #30363d; }
+    text { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 13px; fill: #e6edf3; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .title { font-size: 15px; font-weight: 600; }
+    .muted { fill: #8b949e; }
+    .small { font-size: 11.5px; }
+    .lane { fill: #161b22; stroke: #30363d; }
+    .lane-label { font-weight: 600; text-anchor: middle; }
+    .lane-kind { font-size: 11px; fill: #8b949e; text-anchor: middle; }
+    .life { stroke: #30363d; stroke-dasharray: 3 5; }
+    .call { stroke: #58a6ff; stroke-width: 2; fill: none; }
+    .legal { stroke: #d29922; stroke-width: 2; fill: none; }
+    .lost { stroke: #db61a2; stroke-width: 2; stroke-dasharray: 6 5; fill: none; }
+    .blue { fill: #58a6ff; } .amber { fill: #d29922; } .pink { fill: #db61a2; }
+    .green { fill: #3fb950; } .red { fill: #f85149; }
+    .pill-amber { fill: rgba(210,153,34,.12); stroke: #d29922; }
+    .pill-pink { fill: rgba(219,97,162,.12); stroke: #db61a2; }
+    .commit { fill: rgba(63,185,80,.15); stroke: #3fb950; }
+    .verdict { fill: rgba(248,81,73,.10); stroke: #f85149; }
+    .op { fill: #e6edf3; }
+
+    /* Static by default: the final frame. Motion only when the reader allows it. */
+    @media (prefers-reduced-motion: no-preference) {
+      .step { animation: 14s ease-out infinite both; }
+      .draw { stroke-dasharray: 1; animation: 14s ease-out infinite both; }
+      .s1 { animation-name: s1; } .s1 .draw { animation-name: d1; }
+      .s2 { animation-name: s2; } .s2 .draw { animation-name: d2; }
+      .s3 { animation-name: s3; } .s3 .draw { animation-name: d3; }
+      .s4 { animation-name: s4; } .s4 .draw { animation-name: d4; }
+      .s5 { animation-name: s5; }
+      .s6 { animation-name: s6; }
+      .s7 { animation-name: s7; }
+      .s8 { animation-name: s8; } .s8 .draw { animation-name: d8; }
+      .s9 { animation-name: s9; }
+      .s10 { animation-name: s10; }
+      .x-mark { transform-box: fill-box; transform-origin: center; animation: pop 14s ease-out infinite both; }
+    }
+    @keyframes s1  { 0%, 3%  { opacity: 0; } 6%,  92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes d1  { 0%, 3%  { stroke-dashoffset: 1; } 8%,  100% { stroke-dashoffset: 0; } }
+    @keyframes s2  { 0%, 10% { opacity: 0; } 13%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes d2  { 0%, 10% { stroke-dashoffset: 1; } 15%, 100% { stroke-dashoffset: 0; } }
+    @keyframes s3  { 0%, 17% { opacity: 0; } 20%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes d3  { 0%, 17% { stroke-dashoffset: 1; } 22%, 100% { stroke-dashoffset: 0; } }
+    @keyframes s4  { 0%, 26% { opacity: 0; } 29%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes d4  { 0%, 26% { stroke-dashoffset: 1; } 31%, 100% { stroke-dashoffset: 0; } }
+    @keyframes s5  { 0%, 32% { opacity: 0; } 35%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes s6  { 0%, 38% { opacity: 0; } 41%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes pop { 0%, 40% { transform: scale(0); } 43% { transform: scale(1.4); } 46%, 100% { transform: scale(1); } }
+    @keyframes s7  { 0%, 46% { opacity: 0; } 49%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes s8  { 0%, 51% { opacity: 0; } 54%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes d8  { 0%, 51% { stroke-dashoffset: 1; } 56%, 100% { stroke-dashoffset: 0; } }
+    @keyframes s9  { 0%, 57% { opacity: 0; } 60%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+    @keyframes s10 { 0%, 65% { opacity: 0; } 69%, 92% { opacity: 1; } 97%, 100% { opacity: 0; } }
+  </style>
+  <defs>
+    <marker id="head-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#58a6ff"/></marker>
+    <marker id="head-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#d29922"/></marker>
+  </defs>
+
+  <rect class="card" x="0.5" y="0.5" width="879" height="469" rx="12"/>
+  <text x="28" y="36" class="title">stale read  +  commit → lost response  +  retry  =  <tspan class="red">duplicate charge</tspan></text>
+
+  <!-- Lanes -->
+  <g>
+    <rect class="lane" x="30" y="56" width="140" height="44" rx="8"/>
+    <text x="100" y="75" class="lane-label sans">Client</text><text x="100" y="91" class="lane-kind">workload</text>
+    <rect class="lane" x="230" y="56" width="140" height="44" rx="8"/>
+    <text x="300" y="75" class="lane-label sans">Worker</text><text x="300" y="91" class="lane-kind">checkout app</text>
+    <rect class="lane" x="470" y="56" width="140" height="44" rx="8"/>
+    <text x="540" y="75" class="lane-label sans">ORDER_STATE</text><text x="540" y="91" class="lane-kind">KV</text>
+    <rect class="lane" x="690" y="56" width="140" height="44" rx="8"/>
+    <text x="760" y="75" class="lane-label sans">PAYMENTS</text><text x="760" y="91" class="lane-kind">service binding</text>
+    <line class="life" x1="100" y1="100" x2="100" y2="368"/>
+    <line class="life" x1="300" y1="100" x2="300" y2="368"/>
+    <line class="life" x1="540" y1="100" x2="540" y2="368"/>
+    <line class="life" x1="760" y1="100" x2="760" y2="368"/>
+  </g>
+
+  <!-- 1. checkout request -->
+  <g class="step s1">
+    <text x="200" y="122" class="small" text-anchor="middle">POST /orders/812/checkout</text>
+    <line class="call draw" pathLength="1" x1="104" y1="132" x2="294" y2="132" marker-end="url(#head-blue)"/>
+  </g>
+  <!-- 2. KV read -->
+  <g class="step s2">
+    <text x="420" y="162" class="small" text-anchor="middle">get order:812</text>
+    <line class="call draw" pathLength="1" x1="304" y1="172" x2="534" y2="172" marker-end="url(#head-blue)"/>
+  </g>
+  <!-- 3. stale observation (legal) -->
+  <g class="step s3">
+    <text x="420" y="202" class="small amber" text-anchor="middle">"PENDING"  (really PAID)</text>
+    <line class="legal draw" pathLength="1" x1="536" y1="212" x2="306" y2="212" marker-end="url(#head-amber)"/>
+    <rect class="pill-amber" x="552" y="194" width="200" height="24" rx="12"/>
+    <text x="652" y="210" class="small amber" text-anchor="middle">legal: observer lag (FRA)</text>
+  </g>
+  <!-- 4. charge with key A -->
+  <g class="step s4">
+    <text x="530" y="244" class="small" text-anchor="middle">charge  (idempotency key A)</text>
+    <line class="call draw" pathLength="1" x1="304" y1="254" x2="754" y2="254" marker-end="url(#head-blue)"/>
+  </g>
+  <!-- 5. charge #1 commits -->
+  <g class="step s5">
+    <rect class="commit" x="770" y="243" width="92" height="22" rx="11"/>
+    <text x="816" y="258" class="small green" text-anchor="middle">charge #1 ✓</text>
+  </g>
+  <!-- 6. response lost (fault) -->
+  <g class="step s6">
+    <text x="530" y="284" class="small pink" text-anchor="middle">response lost → Worker sees a timeout</text>
+    <line class="lost" x1="756" y1="294" x2="306" y2="294"/>
+    <path class="x-mark" d="M524 288l12 12m0-12-12 12" stroke="#db61a2" stroke-width="3" stroke-linecap="round"/>
+    <rect class="pill-pink" x="540" y="302" width="212" height="24" rx="12"/>
+    <text x="646" y="318" class="small pink" text-anchor="middle">fault: commit-then-timeout</text>
+  </g>
+  <!-- 7. the application bug -->
+  <g class="step s7">
+    <text x="288" y="322" class="small muted" text-anchor="end">bug: retries with a new key</text>
+  </g>
+  <!-- 8. retry with key B -->
+  <g class="step s8">
+    <text x="530" y="340" class="small" text-anchor="middle">retry charge  (fresh key B)</text>
+    <line class="call draw" pathLength="1" x1="304" y1="350" x2="754" y2="350" marker-end="url(#head-blue)"/>
+  </g>
+  <!-- 9. charge #2 commits -->
+  <g class="step s9">
+    <rect class="commit" x="770" y="339" width="92" height="22" rx="11"/>
+    <text x="816" y="354" class="small green" text-anchor="middle">charge #2 ✓</text>
+  </g>
+  <!-- 10. verdict -->
+  <g class="step s10">
+    <rect class="verdict" x="28" y="380" width="824" height="66" rx="10"/>
+    <text x="48" y="406"><tspan class="red" font-weight="700">FAIL</tspan>  at-most-one-new-charge — observed <tspan class="red" font-weight="700">2</tspan></text>
+    <text x="48" y="430" class="small muted">stale read alone → 1 charge ✓    lost response alone → 0 charges ✓    together → Minimal Failure Set = both</text>
+  </g>
+</svg>

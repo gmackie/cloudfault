@@ -29,4 +29,6 @@ test("real workerd fixture exposes the stale-state + ambiguous-commit bug and re
   });
   assert.equal(artifact.schemaVersion, 1);
   assert.equal(artifact.minimalFailureSet.length, 2);
+  // The CLI writes this artifact after the harness has closed.
+  assert.doesNotThrow(() => JSON.stringify(artifact));
 });

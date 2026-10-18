@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 280" width="880" height="280" role="img" aria-labelledby="title desc">
+  <title id="title">Three-valued outcomes: success, definite failure, and indeterminate, resolved by asking an outcome oracle</title>
+  <desc id="desc">An operation such as charge order 812 completes in one of three ways: SUCCESS, recorded as ok; DEFINITE FAILURE, recorded as fail; or INDETERMINATE, recorded as a Jepsen-style info completion because the effect may have committed. For an indeterminate operation CloudFault asks the OutcomeOracle, a privileged view of the emulator or test backend, and records the actual outcome, for example committed, with source oracle, separately from what the application observed. An oracle that cannot answer yields unknown, never a guess.</desc>
+  <style>
+    .card { fill: #0f1114; stroke: #30363d; }
+    text { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 12px; fill: #e6edf3; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .title { font-size: 15px; font-weight: 600; }
+    .muted { fill: #8b949e; }
+    .small { font-size: 11px; }
+    .bold { font-weight: 700; }
+    .box { fill: #161b22; stroke: #30363d; }
+    .ok { fill: rgba(63,185,80,.10); stroke: #3fb950; }
+    .fail { fill: rgba(248,81,73,.10); stroke: #f85149; }
+    .info { fill: rgba(210,153,34,.10); stroke: #d29922; }
+    .oracle { fill: rgba(88,166,255,.08); stroke: #58a6ff; }
+    .green { fill: #3fb950; } .red { fill: #f85149; } .amber { fill: #d29922; } .blue { fill: #58a6ff; }
+    .edge { fill: none; stroke-width: 2; }
+
+    /* Static by default: the final frame. Motion only when the reader allows it. */
+    @media (prefers-reduced-motion: no-preference) {
+      .step { animation: 11s ease-out infinite both; }
+      .draw { stroke-dasharray: 1; animation: 11s ease-out infinite both; }
+      .o0 { animation-name: o0; }
+      .o1 { animation-name: o1; } .o1 .draw { animation-name: e1; }
+      .o2 { animation-name: o2; } .o2 .draw { animation-name: e2; }
+      .o3 { animation-name: o3; } .o3 .draw { animation-name: e3; }
+      .o4 { animation-name: o4; } .o4 .draw { animation-name: e4; }
+      .o5 { animation-name: o5; }
+      .o6 { animation-name: o6; }
+    }
+    @keyframes o0 { 0%, 2%  { opacity: 0; } 5%,  93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+    /* ok and fail recede once the indeterminate branch takes focus */
+    @keyframes o1 { 0%, 8%  { opacity: 0; } 12%, 38% { opacity: 1; } 44%, 88% { opacity: .35; } 93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+    @keyframes e1 { 0%, 8%  { stroke-dashoffset: 1; } 13%, 100% { stroke-dashoffset: 0; } }
+    @keyframes o2 { 0%, 15% { opacity: 0; } 19%, 38% { opacity: 1; } 44%, 88% { opacity: .35; } 93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+    @keyframes e2 { 0%, 15% { stroke-dashoffset: 1; } 20%, 100% { stroke-dashoffset: 0; } }
+    @keyframes o3 { 0%, 22% { opacity: 0; } 26%, 93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+    @keyframes e3 { 0%, 22% { stroke-dashoffset: 1; } 27%, 100% { stroke-dashoffset: 0; } }
+    @keyframes o4 { 0%, 44% { opacity: 0; } 48%, 93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+    @keyframes e4 { 0%, 44% { stroke-dashoffset: 1; } 50%, 100% { stroke-dashoffset: 0; } }
+    @keyframes o5 { 0%, 54% { opacity: 0; } 58%, 93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+    @keyframes o6 { 0%, 64% { opacity: 0; } 68%, 93% { opacity: 1; } 98%, 100% { opacity: 0; } }
+  </style>
+
+  <rect class="card" x="0.5" y="0.5" width="879" height="279" rx="12"/>
+  <text x="28" y="36" class="title">“maybe committed” is not a failure: outcomes are three-valued</text>
+
+  <!-- the operation -->
+  <g class="step o0">
+    <rect class="box" x="28" y="128" width="164" height="48" rx="10"/>
+    <text x="110" y="148" text-anchor="middle" class="bold">charge()</text>
+    <text x="110" y="166" text-anchor="middle" class="small muted">order 812, key A</text>
+  </g>
+
+  <!-- SUCCESS -->
+  <g class="step o1">
+    <path class="edge draw" pathLength="1" stroke="#3fb950" d="M192 152 C 240 152 240 86 292 86"/>
+    <rect class="ok" x="292" y="62" width="236" height="48" rx="10"/>
+    <text x="308" y="82" class="green bold">SUCCESS</text>
+    <text x="308" y="99" class="small muted">recorded as <tspan class="green">ok</tspan></text>
+  </g>
+  <!-- DEFINITE FAILURE -->
+  <g class="step o2">
+    <path class="edge draw" pathLength="1" stroke="#f85149" d="M192 152 L 292 152"/>
+    <rect class="fail" x="292" y="128" width="236" height="48" rx="10"/>
+    <text x="308" y="148" class="red bold">DEFINITE FAILURE</text>
+    <text x="308" y="165" class="small muted">recorded as <tspan class="red">fail</tspan> · no effect</text>
+  </g>
+  <!-- INDETERMINATE -->
+  <g class="step o3">
+    <path class="edge draw" pathLength="1" stroke="#d29922" d="M192 152 C 240 152 240 218 292 218"/>
+    <rect class="info" x="292" y="194" width="236" height="48" rx="10"/>
+    <text x="308" y="214" class="amber bold">INDETERMINATE</text>
+    <text x="308" y="231" class="small muted">recorded as <tspan class="amber">info</tspan> · lost reply</text>
+  </g>
+
+  <!-- ask the oracle -->
+  <g class="step o4">
+    <path class="edge draw" pathLength="1" stroke="#58a6ff" stroke-dasharray="1" d="M528 218 L 586 218"/>
+    <text x="557" y="208" text-anchor="middle" class="small blue">ask</text>
+    <rect class="oracle" x="590" y="128" width="262" height="114" rx="10"/>
+    <text x="606" y="150" class="blue bold">OutcomeOracle</text>
+    <text x="606" y="167" class="small muted">privileged view of the backend</text>
+  </g>
+  <g class="step o5">
+    <text x="606" y="194">actual<tspan x="716" class="green bold">committed</tspan></text>
+    <text x="606" y="211">observed<tspan x="716" class="amber">indeterminate</tspan></text>
+    <text x="606" y="228">actualSource<tspan x="716" class="blue">oracle</tspan></text>
+  </g>
+  <g class="step o6">
+    <text x="852" y="262" text-anchor="end" class="small muted">no answer → actual <tspan class="amber">unknown</tspan>, never a guess</text>
+  </g>
+</svg>

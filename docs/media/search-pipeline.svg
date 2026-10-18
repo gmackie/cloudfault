@@ -1,0 +1,153 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 320" width="880" height="320" role="img" aria-labelledby="title desc">
+  <title id="title">How CloudFault searches: fault space, plan, execute, history, check, minimize</title>
+  <desc id="desc">Six stages left to right. Fault space: perturbations such as a stale KV read, a lost D1 commit, a Queue redelivery and a lost payment response. Plan: exhaustive, pairwise, coverage-guided or hybrid search produces bounded scenarios. Execute: each scenario runs in real workerd behind nemesis Workers, D1 and R2 proxies and an outcome oracle. History: Jepsen-style invoke, ok, fail and info operations. Check: business invariants; here at-most-one-charge fails. Minimize: the failing scenario of three faults reduces to a two-fault Minimal Failure Set and a minimal workload that replays.</desc>
+  <style>
+    .card { fill: #0f1114; stroke: #30363d; }
+    text { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace; font-size: 11.5px; fill: #e6edf3; }
+    .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .title { font-size: 15px; font-weight: 600; }
+    .stage { fill: #161b22; stroke: #30363d; }
+    .hl { fill: none; stroke: #58a6ff; stroke-width: 2; opacity: 0; }
+    .num { fill: #58a6ff; font-weight: 700; }
+    .name { font-weight: 600; font-size: 13px; }
+    .muted { fill: #8b949e; }
+    .blue { fill: #58a6ff; } .amber { fill: #d29922; } .pink { fill: #db61a2; }
+    .green { fill: #3fb950; } .red { fill: #f85149; }
+    .chip-amber { fill: rgba(210,153,34,.12); stroke: #d29922; }
+    .chip-pink { fill: rgba(219,97,162,.12); stroke: #db61a2; }
+    .chev { fill: #484f58; font-size: 18px; text-anchor: middle; }
+    .track { stroke: #30363d; stroke-dasharray: 2 6; }
+    .token { opacity: 0; }
+    .dropped { opacity: .35; }
+    .strike { stroke: #8b949e; stroke-width: 1.5; }
+
+    /* Static by default: the final frame. Motion only when the reader allows it. */
+    @media (prefers-reduced-motion: no-preference) {
+      .hl, .token, .verdict, .dropped, .strike, .witness { animation: 12s ease-in-out infinite both; }
+      .h1 { animation-name: h1; } .h2 { animation-name: h2; } .h3 { animation-name: h3; }
+      .h4 { animation-name: h4; } .h5 { animation-name: h5; } .h6 { animation-name: h6; }
+      .token { animation-name: travel; }
+      .verdict { transform-box: fill-box; transform-origin: left center; animation-name: verdict; }
+      .dropped { animation-name: drop; }
+      .strike { animation-name: strike; }
+      .witness { animation-name: witness; }
+    }
+    @keyframes h1 { 0%, 1%  { opacity: 0; } 3%,  13% { opacity: 1; } 16%, 100% { opacity: 0; } }
+    @keyframes h2 { 0%, 13% { opacity: 0; } 16%, 27% { opacity: 1; } 30%, 100% { opacity: 0; } }
+    @keyframes h3 { 0%, 27% { opacity: 0; } 30%, 41% { opacity: 1; } 44%, 100% { opacity: 0; } }
+    @keyframes h4 { 0%, 41% { opacity: 0; } 44%, 55% { opacity: 1; } 58%, 100% { opacity: 0; } }
+    @keyframes h5 { 0%, 55% { opacity: 0; } 58%, 69% { opacity: 1; } 72%, 100% { opacity: 0; } }
+    @keyframes h6 { 0%, 69% { opacity: 0; } 72%, 92% { opacity: 1; } 96%, 100% { opacity: 0; } }
+    @keyframes travel {
+      0%       { opacity: 0; transform: translateX(0); }
+      3%, 11%  { opacity: 1; transform: translateX(0); }
+      16%, 25% { opacity: 1; transform: translateX(144px); }
+      30%, 39% { opacity: 1; transform: translateX(288px); }
+      44%, 53% { opacity: 1; transform: translateX(432px); }
+      58%, 67% { opacity: 1; transform: translateX(576px); }
+      72%, 92% { opacity: 1; transform: translateX(720px); }
+      96%, 100% { opacity: 0; transform: translateX(720px); }
+    }
+    @keyframes verdict { 0%, 61% { opacity: 0; transform: scale(.6); } 64% { opacity: 1; transform: scale(1.12); } 67%, 94% { opacity: 1; transform: scale(1); } 98%, 100% { opacity: 0; } }
+    @keyframes drop    { 0%, 77% { opacity: 1; } 81%, 100% { opacity: .35; } }
+    @keyframes strike  { 0%, 77% { opacity: 0; } 81%, 100% { opacity: 1; } }
+    @keyframes witness { 0%, 82% { opacity: 0; } 86%, 94% { opacity: 1; } 98%, 100% { opacity: 0; } }
+  </style>
+
+  <rect class="card" x="0.5" y="0.5" width="879" height="319" rx="12"/>
+  <text x="28" y="36" class="title">search the interactions, check the invariants, shrink the witness</text>
+
+  <!-- 1. fault space -->
+  <g transform="translate(16 60)">
+    <rect class="stage" width="128" height="176" rx="10"/>
+    <rect class="hl h1" width="128" height="176" rx="10"/>
+    <text x="12" y="24"><tspan class="num">1</tspan> <tspan class="name sans">fault space</tspan></text>
+    <rect class="chip-amber" x="8" y="42" width="112" height="22" rx="11"/><text x="64" y="57" text-anchor="middle" class="amber">KV stale read</text>
+    <rect class="chip-pink" x="8" y="70" width="112" height="22" rx="11"/><text x="64" y="85" text-anchor="middle" class="pink">D1 lost commit</text>
+    <rect class="chip-amber" x="8" y="98" width="112" height="22" rx="11"/><text x="64" y="113" text-anchor="middle" class="amber">Queue redeliver</text>
+    <rect class="chip-pink" x="8" y="126" width="112" height="22" rx="11"/><text x="64" y="141" text-anchor="middle" class="pink">PAY lost reply</text>
+    <text x="64" y="166" text-anchor="middle" class="muted">legal · degraded</text>
+  </g>
+  <text x="152" y="154" class="chev">›</text>
+
+  <!-- 2. plan -->
+  <g transform="translate(160 60)">
+    <rect class="stage" width="128" height="176" rx="10"/>
+    <rect class="hl h2" width="128" height="176" rx="10"/>
+    <text x="12" y="24"><tspan class="num">2</tspan> <tspan class="name sans">plan</tspan></text>
+    <text x="12" y="56" class="muted">exhaustive</text>
+    <text x="12" y="76" class="muted">pairwise</text>
+    <text x="12" y="96">coverage-guided</text>
+    <text x="12" y="116" class="muted">hybrid</text>
+    <text x="12" y="146" class="blue">depth ≤ 2</text>
+    <text x="12" y="166" class="blue">→ 11 scenarios</text>
+  </g>
+  <text x="296" y="154" class="chev">›</text>
+
+  <!-- 3. execute -->
+  <g transform="translate(304 60)">
+    <rect class="stage" width="128" height="176" rx="10"/>
+    <rect class="hl h3" width="128" height="176" rx="10"/>
+    <text x="12" y="24"><tspan class="num">3</tspan> <tspan class="name sans">execute</tspan></text>
+    <text x="12" y="56">real workerd</text>
+    <text x="12" y="76" class="muted">nemesis Workers</text>
+    <text x="12" y="96" class="muted">D1 / R2 proxies</text>
+    <text x="12" y="116" class="muted">MSW + adapters</text>
+    <text x="12" y="146" class="muted">outcome oracle</text>
+    <text x="12" y="166" class="muted">asked by token</text>
+  </g>
+  <text x="440" y="154" class="chev">›</text>
+
+  <!-- 4. history -->
+  <g transform="translate(448 60)">
+    <rect class="stage" width="128" height="176" rx="10"/>
+    <rect class="hl h4" width="128" height="176" rx="10"/>
+    <text x="12" y="24"><tspan class="num">4</tspan> <tspan class="name sans">history</tspan></text>
+    <text x="12" y="56"><tspan class="blue">invoke</tspan> charge</text>
+    <text x="12" y="76"><tspan class="amber">info  </tspan> charge ?</text>
+    <text x="12" y="96"><tspan class="blue">invoke</tspan> charge</text>
+    <text x="12" y="116"><tspan class="green">ok    </tspan> charge</text>
+    <text x="12" y="146" class="muted">invoke/ok/fail/</text>
+    <text x="12" y="166" class="muted">info + lineage</text>
+  </g>
+  <text x="584" y="154" class="chev">›</text>
+
+  <!-- 5. check -->
+  <g transform="translate(592 60)">
+    <rect class="stage" width="128" height="176" rx="10"/>
+    <rect class="hl h5" width="128" height="176" rx="10"/>
+    <text x="12" y="24"><tspan class="num">5</tspan> <tspan class="name sans">check</tspan></text>
+    <text x="12" y="56"><tspan class="green">✓</tspan> conserved</text>
+    <text x="12" y="76"><tspan class="green">✓</tspan> monotonic</text>
+    <text x="12" y="96"><tspan class="green">✓</tspan> converges</text>
+    <text x="12" y="116" class="verdict"><tspan class="red" font-weight="700">✗ ≤ 1 charge</tspan></text>
+    <text x="12" y="146" class="muted">business state,</text>
+    <text x="12" y="166" class="muted">not HTTP status</text>
+  </g>
+  <text x="728" y="154" class="chev">›</text>
+
+  <!-- 6. minimize -->
+  <g transform="translate(736 60)">
+    <rect class="stage" width="128" height="176" rx="10"/>
+    <rect class="hl h6" width="128" height="176" rx="10"/>
+    <text x="12" y="24"><tspan class="num">6</tspan> <tspan class="name sans">minimize</tspan></text>
+    <rect class="chip-amber" x="8" y="42" width="112" height="22" rx="11"/><text x="64" y="57" text-anchor="middle" class="amber">KV stale read</text>
+    <g class="dropped">
+      <rect class="chip-pink" x="8" y="70" width="112" height="22" rx="11"/><text x="64" y="85" text-anchor="middle" class="pink">D1 lost commit</text>
+    </g>
+    <line class="strike" x1="14" y1="81" x2="114" y2="81"/>
+    <rect class="chip-pink" x="8" y="98" width="112" height="22" rx="11"/><text x="64" y="113" text-anchor="middle" class="pink">PAY lost reply</text>
+    <g class="witness">
+      <text x="12" y="146" class="green">MFS: 2 faults</text>
+      <text x="12" y="166" class="green">▶ replayable</text>
+    </g>
+  </g>
+
+  <!-- the scenario token -->
+  <line class="track" x1="80" y1="262" x2="800" y2="262"/>
+  <g class="token">
+    <circle cx="80" cy="262" r="9" fill="rgba(88,166,255,.25)"/>
+    <circle cx="80" cy="262" r="5" fill="#58a6ff"/>
+  </g>
+  <text x="440" y="296" text-anchor="middle" class="sans muted" font-size="13">bounded, coverage-guided search over fault combinations → two minimal witnesses: the faults and the workload</text>
+</svg>

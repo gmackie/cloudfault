@@ -39,6 +39,8 @@ export const cloudfault = {
   execute: runScenario,
 };
 
+const plain = (value) => JSON.parse(JSON.stringify(value));
+
 function normalizeScenario(input) {
   if (Array.isArray(input)) return { id: input.length ? input.map((item) => item.id).join("+") : "baseline", perturbations: input };
   if (input?.perturbations) return input;
@@ -90,10 +92,12 @@ export async function runScenario(input = { id: "baseline", perturbations: [] })
 
     const response = await app.fetch("https://checkout.example/orders/812/checkout", { method: "POST" });
     const body = await response.json();
-    const paymentState = await payments.snapshot();
-    const kvState = await kv.snapshot();
-    const queueState = await queue.snapshot();
-    const nemesisEvents = await paymentNemesis.events();
+    // JSRPC results are stubs that are poisoned once the harness closes; copy
+    // them to plain data so the run can be serialized into failure artifacts.
+    const paymentState = plain(await payments.snapshot());
+    const kvState = plain(await kv.snapshot());
+    const queueState = plain(await queue.snapshot());
+    const nemesisEvents = plain(await paymentNemesis.events());
 
     if (ids.has(stale.id) && kvState.events.some((event) => event.type === "semantic")) history.perturb(stale, checkout);
     if (ids.has(ambiguous.id) && nemesisEvents.some((event) => event.type === "fault")) history.perturb(ambiguous, checkout);
