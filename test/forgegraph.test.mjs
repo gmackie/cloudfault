@@ -34,7 +34,7 @@ function tempDir(prefix) {
 
 test("static coverage passes covered bindings and adapters, skips bindings without a semantic pack", () => {
   const draft = staticCoverageEvidence([
-    { config: "wrangler.jsonc", bindings: [{ type: "d1", binding: "DB" }, { type: "kv", binding: "CACHE" }, { type: "hyperdrive", binding: "PG" }], adapters: ["stripe"] },
+    { config: "wrangler.jsonc", bindings: [{ type: "d1", binding: "DB" }, { type: "kv", binding: "CACHE" }, { type: "vectorize", binding: "VEC" }], adapters: ["stripe"] },
     { config: "apps/jobs/wrangler.toml", bindings: [{ type: "ai", binding: "AI" }], adapters: ["stripe", "openai"] },
   ]);
   assert.equal(draft.suiteName, "cloudfault:static");
@@ -44,7 +44,7 @@ test("static coverage passes covered bindings and adapters, skips bindings witho
   assert.equal(draft.skippedTests, 2);
   assert.equal(draft.failedTests, 0);
   assert.equal(draft.coveragePercent, 50);
-  assert.match(draft.coverageSummary, /2 workers; 2\/4 bindings with semantic packs; adapters: openai, stripe; no pack for: ai, hyperdrive/);
+  assert.match(draft.coverageSummary, /2 workers; 2\/4 bindings with semantic packs; adapters: openai, stripe; no pack for: ai, vectorize/);
 });
 
 test("static coverage with no Worker found is cancelled, not passed or failed", () => {
@@ -235,11 +235,11 @@ test("repository drafts combine static coverage with a baseline plan over the st
   try {
     const { staticDraft, baselineDraft, plan } = await repositoryDrafts(root);
     assert.equal(staticDraft.status, "passed");
-    // DB, CACHE, JOBS, FILES covered + stripe adapter; PG (hyperdrive) has no pack.
-    assert.equal(staticDraft.passedTests, 5);
-    assert.equal(staticDraft.skippedTests, 1);
-    assert.equal(staticDraft.coveragePercent, 80);
-    assert.equal(plan.metadata.faultPoints, 4);
+    // DB, CACHE, PG (hyperdrive), JOBS, FILES covered + stripe adapter.
+    assert.equal(staticDraft.passedTests, 6);
+    assert.equal(staticDraft.skippedTests, 0);
+    assert.equal(staticDraft.coveragePercent, 100);
+    assert.equal(plan.metadata.faultPoints, 5);
     assert.ok(plan.scenarios.length > 0 && plan.scenarios.length <= 100);
     assert.equal(baselineDraft.status, "queued");
     assert.equal(baselineDraft.skippedTests, plan.scenarios.length);

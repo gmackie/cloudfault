@@ -32,7 +32,7 @@ export interface ForgeGraphTestRunEvidence extends EvidenceDraft {
 
 /** Binding types with a dedicated CloudFault semantic pack (mirrors `cloudfault doctor`). */
 export const SUPPORTED_BINDING_TYPES: readonly string[] = [
-  "kv", "d1", "r2", "queue-producer", "queue-consumer", "durable-object", "service", "workflow",
+  "kv", "d1", "r2", "queue-producer", "queue-consumer", "durable-object", "service", "workflow", "hyperdrive", "images",
 ];
 
 export interface WorkerInspection {

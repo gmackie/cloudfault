@@ -42,9 +42,10 @@ CloudFault is an experimental but executable framework. The repository currently
 - causal failure graphs and witness extraction;
 - JSON, JUnit, GitHub Actions, text timeline, and HTML reports;
 - portable local/remote execution backends and a versioned remote-agent protocol;
-- Cloudflare KV, D1, R2, Queue, Durable Object, Workflow, Scheduled, Service Binding, and observer-region semantics;
+- Cloudflare KV, D1, R2, Hyperdrive, Images, Queue, Durable Object, Workflow, Scheduled, Service Binding, and observer-region semantics, with every other binding type still recorded as a coverage gap;
 - shape-preserving D1 and R2 degradation proxies, including committed-write/lost-response ambiguity;
 - **`D1Database.batch()` interposition** with statement-level selectors, and contract probes that are refused unless explicitly enabled;
+- **Hyperdrive and Images interposition** — a Postgres-driver proxy (`pg` methods and postgres.js tagged templates) with origin-unavailable, pool-exhausted, query-timeout and commit-then-timeout faults plus the legal cached-read variation, and an Images proxy over `info()` and `input()…output()` chains;
 - **R2 multipart interposition** — `createMultipartUpload`/`resumeMultipartUpload` hand back a wrapped upload whose `uploadPart`/`complete`/`abort` are instrumented, with part-scoped selectors and the same refused-by-default contract probes;
 - a **privileged `OutcomeOracle`** asked by caller-minted token, with `oracle` / `declared` / `inferred` / `unknown` provenance on every recorded outcome;
 - **multi-event workloads** with per-event delivery faults and order/uniqueness/completeness checkers;

@@ -165,6 +165,8 @@ const STARTER_FAULTS = {
   "durable-object": [["duplicateAlarmDelivery"], ["durableObjectReset"]],
   service: [["serviceTimeout"], ["serviceUnavailable"]],
   workflow: [["workflowStepRetry"], ["workflowRetryDelay", 2000]],
+  hyperdrive: [["hyperdriveOriginUnavailable"], ["hyperdrivePoolExhausted"], ["hyperdriveCommitThenTimeout"], ["hyperdriveCachedRead"]],
+  images: [["imagesTransformError"], ["imagesUnavailable"]],
 };
 export const STARTER_BINDING_TYPES = Object.keys(STARTER_FAULTS);
 const STARTER_IMPORTS = [...new Set(Object.values(STARTER_FAULTS).flat().map(([name]) => name))];

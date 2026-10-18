@@ -63,6 +63,14 @@ export function recommendCloudFaultCoverage(
       recommendations.push({ id: `binding:${target}:do-retry`, kind: "scenario", priority: "high", target, title: `Retry/reset ${target} around alarms`, reason: "Durable Object alarms may retry after unsuccessful execution; handlers should make durable progress idempotently.", perturbations: ["alarm-retry", "durable-object-reset"] });
     } else if (binding.type === "workflow") {
       recommendations.push({ id: `binding:${target}:workflow-retry`, kind: "scenario", priority: "high", target, title: `Repeat ${target} steps`, reason: "Workflow steps are retryable units, so externally visible calls inside them need idempotency.", perturbations: ["workflow-step-retry", "workflow-retry-delay"] });
+    } else if (binding.type === "hyperdrive") {
+      recommendations.push(
+        { id: `binding:${target}:hyperdrive-ambiguity`, kind: "scenario", priority: "high", target, title: `Inject ambiguous ${target} queries`, reason: "A query that times out after reaching Postgres may have committed; blind retries of writes through Hyperdrive can apply them twice.", perturbations: ["origin-unavailable", "connection-pool-exhausted", "commit-then-timeout"] },
+        { id: `binding:${target}:hyperdrive-cache`, kind: "scenario", priority: "medium", target, title: `Serve cached ${target} reads`, reason: "Hyperdrive caches read-only query results, so a read after a write can legally return the pre-write row.", perturbations: ["cached-read"] },
+        { id: `binding:${target}:hyperdrive-relational`, kind: "invariant", priority: "high", target, title: `Assert idempotent writes through ${target}`, reason: "Retried transactions must leave one logical effect; enforce it with a unique key or an idempotency table, then check it.", invariantTemplate: "atMostOnce(rowEffect, businessIdempotencyKey)" },
+      );
+    } else if (binding.type === "images") {
+      recommendations.push({ id: `binding:${target}:images-failure`, kind: "scenario", priority: "medium", target, title: `Fail ${target} transformations`, reason: "A failed variant derivation must not leave records pointing at images that were never produced.", perturbations: ["transform-error", "images-unavailable"] });
     } else if (binding.type === "service") {
       recommendations.push({ id: `binding:${target}:service-degraded`, kind: "scenario", priority: "medium", target, title: `Degrade service binding ${target}`, reason: "Partial service failure should preserve deadlines, retry bounds, and application invariants.", perturbations: ["service-timeout", "service-unavailable", "latency"] });
     }

@@ -12,7 +12,15 @@ export type CloudflareBindingType =
   | "ai"
   | "browser"
   | "images"
-  | "pipeline";
+  | "pipeline"
+  | "analytics-engine"
+  | "send-email"
+  | "rate-limit"
+  | "dispatch-namespace"
+  | "mtls-certificate"
+  | "secrets-store"
+  | "assets"
+  | "version-metadata";
 
 export interface CloudflareBindingDescriptor {
   type: CloudflareBindingType;
@@ -165,6 +173,19 @@ export function discoverWranglerTopology(input: string | Record<string, unknown>
   if (raw.images && typeof raw.images === "object") {
     const binding = string(record(raw.images).binding) ?? "IMAGES";
     bindings.push({ type: "images", binding, metadata: { ...record(raw.images) } });
+  }
+
+  // Bindings CloudFault has no semantics for are still recorded, so coverage
+  // reports count them as gaps instead of never seeing them.
+  add("analytics-engine", array(raw.analytics_engine_datasets));
+  add("send-email", array(raw.send_email));
+  add("rate-limit", array(raw.ratelimits));
+  add("dispatch-namespace", array(raw.dispatch_namespaces));
+  add("mtls-certificate", array(raw.mtls_certificates));
+  add("secrets-store", array(raw.secrets_store_secrets));
+  for (const [type, key] of [["assets", "assets"], ["version-metadata", "version_metadata"]] as const) {
+    const binding = string(record(raw[key]).binding);
+    if (binding) bindings.push({ type, binding, metadata: { ...record(raw[key]) } });
   }
 
   return { name: string(raw.name), bindings, raw };
