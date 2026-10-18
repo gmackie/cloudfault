@@ -1,0 +1,13 @@
+{
+  "name": "cloudfault-generated-smoke",
+  "main": "src/index.js",
+  "compatibility_date": "2026-08-31",
+  "kv_namespaces": [
+    { "binding": "SESSIONS", "id": "cloudfault-sessions" }
+  ],
+  "queues": {
+    "producers": [
+      { "binding": "EVENTS", "queue": "cloudfault-events" }
+    ]
+  }
+}

@@ -9,6 +9,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./smoke": {
+      "types": "./dist/smoke.d.ts",
+      "import": "./dist/smoke.js"
     }
   },
   "dependencies": {

@@ -105,22 +105,26 @@ function append(key, value, meta) {
   if (meta !== undefined) metadata.set(key, clone(meta));
 }
 function viewKey(key, region = observer) { return \`\${region}\u0000\${key}\`; }
+// A rule set for key "*" applies to whichever key is read next, so a caller
+// that does not know the application's keys can still make its reads stale.
 function consumeManual(key) {
-  const rule = manual.get(key);
-  if (!rule) return undefined;
+  const ruleKey = manual.has(key) ? key : manual.has("*") ? "*" : undefined;
+  if (ruleKey === undefined) return undefined;
+  const rule = manual.get(ruleKey);
   rule.remaining--;
-  if (rule.remaining <= 0) manual.delete(key);
+  if (rule.remaining <= 0) manual.delete(ruleKey);
   return rule;
 }
 function observed(key) {
   const override = consumeManual(key);
   if (override) return { value: override.value, metadata: override.metadata, semantic: override.kind };
   const history = historyFor(key);
-  const lagRule = views.get(viewKey(key));
+  const lagKey = views.has(viewKey(key)) ? viewKey(key) : viewKey("*");
+  const lagRule = views.get(lagKey);
   if (!lagRule) return { ...(history.at(-1) ?? { value: null, metadata: null }), semantic: undefined };
   const index = Math.max(-1, history.length - 1 - lagRule.versionsBehind);
   lagRule.remaining--;
-  if (lagRule.remaining <= 0) views.delete(viewKey(key));
+  if (lagRule.remaining <= 0) views.delete(lagKey);
   const entry = index < 0 ? { value: null, metadata: null } : history[index];
   return { ...entry, semantic: "stale-read", versionsBehind: lagRule.versionsBehind };
 }

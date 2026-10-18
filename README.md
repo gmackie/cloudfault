@@ -152,6 +152,17 @@ npm run cloudfault -- contracts .cloudfault/semantic-contracts.json
 npm run cloudfault -- contract shopify
 ```
 
+## Generated smoke execute()
+
+`cloudfault init` writes a config that runs. Its `execute` is `createSmokeExecute()` from `@gmacko/cloudfault/cloudflare/smoke` (Node-only, so the main `./cloudflare` entry stays Workers-safe). It:
+
+1. starts the Worker from its Wrangler config with Wrangler's test harness;
+2. reroutes KV namespaces and Queue producers through nemesis Workers, so stale KV reads (for any key) and duplicated or failed queue sends really happen;
+3. sends the configured requests (default `GET /`) and fires the config's cron triggers; and
+4. checks for unexpected responses (5xx unless `expectStatus` says otherwise) and failed scheduled runs.
+
+D1, R2, Hyperdrive, Images, Durable Object and Workflow faults need CloudFault's proxies inside the Worker, which a generated config cannot add without changing application code. So `applicableFaultPoints()` drops them, and the generated config says so. Replace the smoke requests with production-shaped traffic, and wrap the smoke execute in your own when you need domain invariants.
+
 ## ForgeGraph evidence
 
 `@gmacko/cloudfault/forgegraph` maps CloudFault results to ForgeGraph `test_run` evidence and posts it to a changeset:
@@ -159,18 +170,19 @@ npm run cloudfault -- contract shopify
 | suite | source | status | counts |
 |-------|--------|--------|--------|
 | `cloudfault:static` | Wrangler bindings + detected provider adapters | `passed`; `cancelled` when no Worker is found | covered bindings and adapters pass, bindings without a semantic pack are skipped |
-| `cloudfault:baseline` | the starter fault plan (`hybrid`, depth 2, ≤100 scenarios) | `queued` | every planned scenario is skipped: planned, not executed |
+| `cloudfault:baseline` | the starter fault plan (`hybrid`, depth 2, ≤100 scenarios per Worker), run through the generated smoke `execute()` | `passed` / `failed` when it ran; `queued` when nothing could start or execution was off | scenarios whose faults can be applied from outside the Worker run; the rest, and every scenario of a Worker that cannot start, are skipped |
 | `cloudfault:<name>` | an executed config (`evidence run`) | `passed` / `failed` | one test per scenario, baseline included; budget-skipped scenarios are skipped |
 
 ```bash
 # credentials: FORGEGRAPH_TOKEN (+ FORGEGRAPH_SERVER) in CI, else `forge login`
 cloudfault evidence static . --app my-app            # changeset resolved from HEAD's SHA
-cloudfault evidence baseline . --app my-app --dry-run
+cloudfault evidence baseline . --app my-app --dry-run   # executes; --no-execute for plan-only
 cloudfault evidence run ./cloudfault.config.mjs --app my-app --changeset <id>
 
 # every ForgeGraph cloudflare-workers app, checked out at its default-branch head in a scratch dir
 cloudfault fleet                 # dry run: prints the table, writes fleet-results.json
 cloudfault fleet --push          # posts evidence to each app's main-head changeset
+cloudfault fleet --execute       # also runs baselines (only Workers that start without install/build)
 ```
 
 Run IDs are `<suite>:<app>:<sha12>`, so rerunning a suite against the same commit updates its test run instead of adding one.

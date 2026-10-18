@@ -13,6 +13,10 @@
       "types": "./dist/cloudflare/index.d.ts",
       "import": "./dist/cloudflare/index.js"
     },
+    "./cloudflare/smoke": {
+      "types": "./dist/cloudflare/smoke.d.ts",
+      "import": "./dist/cloudflare/smoke.js"
+    },
     "./stripe": {
       "types": "./dist/stripe/index.d.ts",
       "import": "./dist/stripe/index.js"

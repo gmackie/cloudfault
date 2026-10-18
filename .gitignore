@@ -14,3 +14,6 @@ packages/cloudfault/LICENSE
 # CI installs with `npm install` so dependency drift is caught by the real
 # workerd/Wrangler fixtures rather than pinned by a lockfile.
 package-lock.json
+
+# Scratch copies made by examples/generated-smoke/integration.test.mjs
+examples/generated-smoke/.work/
