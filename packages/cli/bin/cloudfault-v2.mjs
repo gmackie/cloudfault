@@ -13,8 +13,11 @@ function usage() {
   return `cloudfault <command>
 
 Commands:
+  ci [configs...]       Replay pinned regressions, run every config, and gate CI
+                        (cloudfault ci --help for options and exit codes)
   run <module>          Explore a CloudFault config using its configured strategy
   replay <artifact>     Re-run the scenario stored in a failure artifact
+  pin <artifact...>     Add a failure to the regression corpus ci replays
   timeline <artifact>   Render a saved failure history
   inspect <wrangler> [source-root]
                         Discover bindings, integrations, and recommended tests

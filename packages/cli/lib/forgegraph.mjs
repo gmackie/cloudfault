@@ -4,6 +4,9 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { STARTER_BINDING_TYPES, configCrons, generateStarterConfig, inspectRepository, starterFaultPoints } from "./project.mjs";
 import { fail, filePath, heading, label, pass, warn } from "./terminal.mjs";
+import { parseFlags } from "./flags.mjs";
+
+export { parseFlags };
 
 const forgegraph = () => import("@cloudfault/forgegraph");
 const core = () => import("@cloudfault/core");
@@ -13,21 +16,6 @@ const smokeModule = () => import("@cloudfault/cloudflare/smoke");
 // The same search shape the generated starter config declares.
 const BASELINE_PLAN = { strategy: "hybrid", maxDepth: 2, maxScenarios: 100 };
 const NOT_EXECUTED = "not executed (pass --execute to run the smoke workload)";
-
-/** `--name value` / `--flag` parsing; repeated flags accumulate. */
-export function parseFlags(args) {
-  const flags = {};
-  const positional = [];
-  for (let index = 0; index < args.length; index++) {
-    const arg = args[index];
-    if (!arg.startsWith("--")) { positional.push(arg); continue; }
-    const [name, inline] = arg.slice(2).split("=", 2);
-    const next = args[index + 1];
-    const value = inline ?? (next !== undefined && !next.startsWith("--") ? (index++, next) : true);
-    flags[name] = name in flags ? [flags[name], value].flat() : value;
-  }
-  return { flags, positional };
-}
 
 function list(value) {
   if (value === undefined || value === true) return [];
