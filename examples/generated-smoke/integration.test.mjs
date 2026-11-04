@@ -112,3 +112,36 @@ test("cloudfault ci gates a generated config and replays its pinned failure thro
   assert.match(output, /REPRODUCED pinned/);
   assert.match(output, /PASS .*0\/0 scenarios/);
 });
+
+test("ci --starter runs the starter plan for a Worker with no config and finds its bug", { timeout: 600_000 }, () => {
+  const directory = path.join(here, ".work", "starter");
+  fs.rmSync(directory, { recursive: true, force: true });
+  fs.cpSync(path.join(here, "worker"), directory, { recursive: true });
+  const env = { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "", GITHUB_STEP_SUMMARY: "" };
+  const result = spawnSync(process.execPath, [cli, "ci", "--starter"], { cwd: directory, encoding: "utf8", env, timeout: 300_000 });
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 1, output);
+  assert.match(output, /FAIL starter:cloudfault-generated-smoke/);
+  const summary = JSON.parse(fs.readFileSync(path.join(directory, ".cloudfault/reports/summary.json"), "utf8"));
+  const [suite] = summary.results;
+  assert.equal(suite.starter, true);
+  assert.equal(suite.wrangler, "wrangler.jsonc");
+  assert.deepEqual(suite.minimalFailureSet.length, 1);
+  assert.ok(suite.artifact, "a failure artifact is written even without a replay module");
+});
+
+test("ci --starter reports a Worker that cannot start as not-runnable and exits 0", { timeout: 300_000 }, () => {
+  const directory = path.join(here, ".work", "starter-unbuilt");
+  fs.rmSync(directory, { recursive: true, force: true });
+  fs.cpSync(path.join(here, "worker"), directory, { recursive: true });
+  const config = path.join(directory, "wrangler.jsonc");
+  fs.writeFileSync(config, fs.readFileSync(config, "utf8").replace('"src/index.js"', '".open-next/worker.js"'));
+  const env = { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "", GITHUB_STEP_SUMMARY: "" };
+  const result = spawnSync(process.execPath, [cli, "ci", "--starter", "--strict"], { cwd: directory, encoding: "utf8", env, timeout: 240_000 });
+  const output = `${result.stdout}\n${result.stderr}`;
+  assert.equal(result.status, 0, output);
+  assert.match(output, /NOT RUNNABLE starter:cloudfault-generated-smoke/);
+  const summary = JSON.parse(fs.readFileSync(path.join(directory, ".cloudfault/reports/summary.json"), "utf8"));
+  assert.equal(summary.totals["not-runnable"], 1);
+  assert.match(fs.readFileSync(path.join(directory, ".cloudfault/reports/junit.xml"), "utf8"), /<skipped message="not runnable: /);
+});

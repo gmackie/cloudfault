@@ -1,3 +1,7 @@
+import { createRequire } from "node:module";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
+
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 
@@ -44,16 +48,36 @@ async function optionalImport(specifier: string): Promise<unknown> {
 }
 
 /**
+ * Wrangler is a peer dependency, so prefer the copy installed in the project
+ * under test (CLOUDFAULT_PROJECT_ROOT, else the working directory): a CLI run
+ * from an npx cache would otherwise load whatever Wrangler sits beside it.
+ */
+async function projectImport(specifier: string, root = process.env.CLOUDFAULT_PROJECT_ROOT ?? process.cwd()): Promise<unknown> {
+  try {
+    const resolved = createRequire(path.join(path.resolve(root), "package.json")).resolve(specifier);
+    return await optionalImport(pathToFileURL(resolved).href);
+  } catch {
+    return undefined;
+  }
+}
+
+function exportsTestHarness(mod: unknown): boolean {
+  return typeof (mod as { createTestHarness?: unknown } | undefined)?.createTestHarness === "function";
+}
+
+/**
  * Thin wrapper over Wrangler's official createTestHarness(). CloudFault uses
  * bindingOverrides to route application bindings through controllable Nemesis
  * Workers instead of patching production application code.
  */
 export async function createCloudFaultHarness(config: CloudFaultHarnessConfig): Promise<CloudFaultHarness> {
-  let mod: unknown;
-  try {
-    mod = await optionalImport("wrangler");
-  } catch (error) {
-    throw new Error("createCloudFaultHarness() requires wrangler >= 4.106.0", { cause: error });
+  let mod: unknown = await projectImport("wrangler");
+  if (!exportsTestHarness(mod)) {
+    try {
+      mod = await optionalImport("wrangler");
+    } catch (error) {
+      throw new Error("createCloudFaultHarness() requires wrangler >= 4.106.0", { cause: error });
+    }
   }
 
   const createTestHarness = (mod as { createTestHarness?: (config: unknown) => unknown }).createTestHarness;

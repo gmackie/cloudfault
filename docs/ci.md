@@ -20,6 +20,31 @@ Configs import `@gmacko/cloudfault`, so the project must already depend on it.
 Install it as a dev dependency (`npm install -D @gmacko/cloudfault`) and run the
 CLI that comes with it.
 
+## Repos without a config: `--starter`
+
+`cloudfault ci --starter` uses the configs it finds. When there are none, it
+runs the starter plan that `cloudfault init` would generate, for every Wrangler
+config under the targets (default `.`), in-process. You don't need a
+`cloudfault.config.mjs`. This is what ForgeGraph's default advisory check runs
+on Cloudflare Workers apps.
+
+- Each Worker becomes a `starter:<worker-name>` suite. It is started from its
+  Wrangler config, KV and Queue producer bindings are routed through nemesis
+  Workers, and `GET /` is sent while the starter faults are applied. The check
+  fails on 5xx responses and failed scheduled runs.
+- Scenarios whose faults can only be applied inside the Worker are not run.
+  They are counted as `unsupportedScenarios` in `summary.json`.
+- A Worker that can't start (missing build output, unresolved imports, a bad
+  config) is `not-runnable`. It shows up in the summary and as a skipped JUnit
+  case, and it does **not** fail CI, even with `--strict`.
+- Starter failures write an artifact but have no replay module, so they can't
+  be pinned. Run `cloudfault init` to get a config you can replay and extend.
+- `wrangler` and `miniflare` are peer dependencies. They are loaded from the
+  project under test (`CLOUDFAULT_PROJECT_ROOT`, or else the working directory)
+  when it has a Wrangler with `createTestHarness()`. Otherwise the copy
+  installed next to CloudFault is used, so `npx -y @gmacko/cloudfault ci
+  --starter` works in a checkout that has no CloudFault dependency.
+
 ## Exit codes
 
 | Code | Meaning |
@@ -48,6 +73,7 @@ as incomplete.
 | `--regressions-dir <dir>` | The pinned regression corpus (default `cloudfault-regressions`). |
 | `--no-regressions` | Skip replaying the corpus. |
 | `--strict` | Exit `2` on incomplete searches. |
+| `--starter` | Run the config-free starter plan when no configs are found (see above). |
 
 `cloudfault run <config>` takes the same search flags (`--seed`, `--max-scenarios`,
 `--max-runs`, `--time-budget`, `--concurrency`, `--reports-dir`, `--failures-dir`,
@@ -125,7 +151,7 @@ jobs:
           restore-keys: |
             cloudfault-${{ github.ref_name }}-
             cloudfault-main-
-      - uses: gmackie/cloudfault@main   # pin a commit SHA for reproducible CI
+      - uses: gmackie/cloudfault@v0.3.0
         with:
           seed: ${{ github.run_number }}
           time-budget: 10m

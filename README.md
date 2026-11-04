@@ -175,7 +175,7 @@ npm run cloudfault -- contract shopify
 `cloudfault ci` replays the pinned regression corpus (`cloudfault-regressions/`), runs every config, writes `summary.json`, `summary.md`, and a combined `junit.xml`, appends the job summary on GitHub Actions, and exits `0` pass, `1` invariant failure or reproduced regression, `2` incomplete under `--strict`, or `3` config/tool error. The repository is also a composite action:
 
 ```yaml
-- uses: gmackie/cloudfault@main   # pin a commit SHA
+- uses: gmackie/cloudfault@v0.3.0
   with:
     seed: ${{ github.run_number }}
     time-budget: 10m
