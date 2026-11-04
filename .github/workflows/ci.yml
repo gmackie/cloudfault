@@ -22,4 +22,12 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run check-versions
       - run: npm test
+      # Dogfood the composite action: gate on a suite that must pass every
+      # applicable scenario, and fail the job if a budget cuts it short.
+      - name: CloudFault gate
+        uses: ./
+        with:
+          targets: examples/ci-gate
+          seed: ${{ github.run_number }}
+          strict: "true"
       - run: npm pack --workspace @gmacko/cloudfault --dry-run

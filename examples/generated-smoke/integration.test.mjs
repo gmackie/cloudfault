@@ -92,3 +92,23 @@ test("a Worker that cannot start is reported as not runnable, not as failed", { 
   assert.equal(execution.runs.length, 0);
   assert.match(baselineDraft.coverageSummary, /no Worker could be started; not runnable: wrangler.jsonc/);
 });
+
+test("cloudfault ci gates a generated config and replays its pinned failure through execute()", { timeout: 600_000 }, () => {
+  const { directory } = generated("ci-gate");
+  const env = { ...process.env, NO_COLOR: "1", GITHUB_ACTIONS: "", GITHUB_STEP_SUMMARY: "" };
+  const ci = (...args) => spawnSync(process.execPath, [cli, "ci", ...args], { cwd: directory, encoding: "utf8", env, timeout: 300_000 });
+
+  const found = ci("--no-regressions");
+  assert.equal(found.status, 1, `${found.stdout}\n${found.stderr}`);
+  const summary = JSON.parse(fs.readFileSync(path.join(directory, ".cloudfault/reports/summary.json"), "utf8"));
+  assert.equal(summary.results[0].status, "fail");
+  assert.deepEqual(summary.results[0].minimalFailureSet.length, 1);
+
+  // Generated configs export no runScenario, so the pin replays through config.execute().
+  execFileSync(process.execPath, [cli, "pin", summary.results[0].artifact], { cwd: directory, env });
+  const replayed = ci("--max-scenarios", "0");
+  const output = `${replayed.stdout}\n${replayed.stderr}`;
+  assert.equal(replayed.status, 1, output);
+  assert.match(output, /REPRODUCED pinned/);
+  assert.match(output, /PASS .*0\/0 scenarios/);
+});

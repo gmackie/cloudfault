@@ -1,149 +1,12 @@
 #!/usr/bin/env node
 import fs from "node:fs";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
-import { color, filePath, label, pass, paint } from "../lib/terminal.mjs";
+import { parseFlags } from "../lib/flags.mjs";
+import { buildPlan, configOverrides, displayPath, executeConfig, guidanceForConfig, loadConfig, materializeFaultPoints, runSuite } from "../lib/run.mjs";
+import { color, fail, filePath, heading, label, pass, paint, warn } from "../lib/terminal.mjs";
 
 const core = () => import("@cloudfault/core");
-
-/** A path relative to the working directory when it is inside it, else absolute. */
-function displayPath(file) {
-  const relative = path.relative(process.cwd(), file);
-  return relative && !relative.startsWith("..") && !path.isAbsolute(relative) ? relative : file;
-}
-
-function safeFilePart(value) {
-  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-|-$/g, "").slice(0, 100) || "failure";
-}
-
-async function importModule(specifier) {
-  if (specifier.startsWith(".") || specifier.startsWith("/") || specifier.startsWith("file:")) {
-    return import(specifier.startsWith("file:") ? specifier : pathToFileURL(path.resolve(specifier)).href);
-  }
-  return import(specifier);
-}
-
-async function loadConfig(modulePath) {
-  const { assertValidCloudFaultConfig } = await core();
-  const mod = await importModule(modulePath);
-  const config = mod.cloudfault ?? mod.default;
-  if (!config || typeof config !== "object") throw new Error(`No 'cloudfault' or default config export found in ${modulePath}`);
-  if (!Array.isArray(config.faultPoints) && typeof config.resolveFaultSpace !== "function") throw new Error("CloudFault config must expose faultPoints[] or resolveFaultSpace(discoveredCall)");
-  if (typeof config.execute !== "function") throw new Error("CloudFault config must expose execute(scenario)");
-  if (Array.isArray(config.faultPoints)) assertValidCloudFaultConfig(config);
-  return config;
-}
-
-async function materializeFaultPoints(config) {
-  if (Array.isArray(config.faultPoints) && config.faultPoints.length) return config.faultPoints;
-  if (typeof config.resolveFaultSpace !== "function") return [];
-  const { faultPointsFromHistory } = await core();
-  const baseline = await config.execute({ id: "baseline-discovery", perturbations: [], seed: config.seed });
-  return faultPointsFromHistory(baseline.history, config.resolveFaultSpace);
-}
-
-async function executionForConfig(config, modulePath) {
-  const { FileScenarioCache, withScenarioCache } = await core();
-  let execute = config.execute;
-  if (config.cache === true || config.cache === "file") {
-    execute = withScenarioCache(execute, {
-      cache: new FileScenarioCache(config.cacheFile),
-      testName: config.name ?? modulePath,
-      workloadFingerprint: config.workloadFingerprint,
-      environmentFingerprint: config.environmentFingerprint,
-    });
-  }
-  return execute;
-}
-
-function plannerOptions(config) {
-  return {
-    strategy: config.strategy ?? "exhaustive",
-    maxDepth: config.maxDepth ?? 1,
-    maxScenarios: config.maxScenarios,
-    seed: config.seed,
-    incidents: config.incidents,
-    previousRuns: config.previousRuns,
-    guided: config.guided,
-    coverageGuided: config.coverageGuided,
-  };
-}
-
-function executionOptions(config) {
-  return {
-    seed: config.seed,
-    stopOnFirstFailure: config.stopOnFirstFailure ?? true,
-    minimizeFailure: config.minimizeFailure ?? true,
-    concurrency: config.concurrency ?? 1,
-    budget: config.budget,
-  };
-}
-
-async function guidanceForConfig(config) {
-  if (!config.persistGuidance && !config.guidanceFile) return undefined;
-  const { FileCoverageGuidanceStore } = await core();
-  const store = new FileCoverageGuidanceStore(config.guidanceFile);
-  return { store, guidance: await store.load() };
-}
-
-async function buildPlan(config, faultPoints, guidanceState) {
-  const { coverageGuidedScenarios, planScenarios } = await core();
-  const options = plannerOptions(config);
-  const normal = planScenarios(faultPoints, options);
-  if (normal.strategy !== "coverage-guided" || !guidanceState) return normal;
-  const scenarios = coverageGuidedScenarios(faultPoints, guidanceState.guidance, {
-    maxDepth: config.coverageGuided?.maxDepth ?? config.maxDepth ?? 3,
-    maxCandidates: config.coverageGuided?.maxCandidates,
-    maxScenarios: config.coverageGuided?.maxScenarios ?? config.maxScenarios,
-    seed: config.seed,
-    includePreviouslyExecuted: config.coverageGuided?.includePreviouslyExecuted,
-  });
-  return { ...normal, scenarios, metadata: { ...normal.metadata, persistedGuidance: true } };
-}
-
-function reportPaths(directory, testName) {
-  const safe = safeFilePart(testName);
-  return {
-    json: path.join(directory, `${safe}.json`),
-    junit: path.join(directory, `${safe}.junit.xml`),
-    html: path.join(directory, `${safe}.html`),
-  };
-}
-
-async function writeReports(config, result, artifact) {
-  const { dependencyCoverage, githubAnnotations, htmlFailureReport, jsonReport, junitReport } = await core();
-  const directory = path.resolve(config.reportDirectory ?? ".cloudfault/reports");
-  fs.mkdirSync(directory, { recursive: true });
-  const paths = reportPaths(directory, config.name ?? "cloudfault");
-  const coverage = result.baseline ? dependencyCoverage(result.baseline, result.runs) : undefined;
-  if (result.baseline) {
-    fs.writeFileSync(paths.json, jsonReport(result.baseline, result.runs));
-    fs.writeFileSync(paths.junit, junitReport(config.name ?? "cloudfault", result.baseline, result.runs));
-  }
-  if (artifact) fs.writeFileSync(paths.html, htmlFailureReport(artifact, { dependencyCoverage: coverage }));
-  if (process.env.GITHUB_ACTIONS && result.firstFailure) for (const annotation of githubAnnotations(result.firstFailure)) console.log(annotation);
-  return { paths, coverage };
-}
-
-async function persistGuidance(guidanceState, result) {
-  if (!guidanceState) return;
-  if (result.baseline) guidanceState.guidance.observe(result.baseline);
-  for (const run of result.runs) guidanceState.guidance.observe(run);
-  await guidanceState.store.save(guidanceState.guidance);
-}
-
-async function executeConfig(modulePath) {
-  const { executeScenarioPlan } = await core();
-  const config = await loadConfig(modulePath);
-  const faultPoints = await materializeFaultPoints(config);
-  const execute = await executionForConfig(config, modulePath);
-  const guidanceState = await guidanceForConfig(config);
-  const plan = await buildPlan(config, faultPoints, guidanceState);
-  const result = await executeScenarioPlan(plan, execute, executionOptions(config));
-  result.plan = plan;
-  await persistGuidance(guidanceState, result);
-  return { config, plan, result };
-}
+const SEARCH_BOOLEANS = ["strict"];
 
 /** Executes a config and maps the search to a ForgeGraph evidence draft. */
 async function runDraft(modulePath) {
@@ -152,60 +15,47 @@ async function runDraft(modulePath) {
   return runEvidence(config.name ?? path.basename(modulePath), result.baseline, result.runs, { skipped: result.execution.skipped.length });
 }
 
-async function runModern(modulePath) {
-  const { createFailureArtifact, renderChecks, renderFailureArtifact } = await core();
-  const { config, plan, result } = await executeConfig(modulePath);
+async function runModern(args) {
+  const { renderChecks, renderFailureArtifact } = await core();
+  const { flags, positional } = parseFlags(args, { booleans: SEARCH_BOOLEANS });
+  const [modulePath] = positional;
+  if (!modulePath) throw new Error("Usage: cloudfault run <module> [--seed n] [--max-scenarios n] [--max-runs n] [--time-budget 5m] [--concurrency n] [--reports-dir dir] [--failures-dir dir] [--strict]");
+  const suite = await runSuite(modulePath, configOverrides(flags));
+  const { config, plan, result, outcome } = suite;
 
   console.log(`${label("Search strategy:")} ${plan.strategy}`);
+  if (config.seed !== undefined) console.log(`${label("Seed:")} ${config.seed}`);
   console.log(`${label("Planned scenarios:")} ${plan.scenarios.length}`);
   console.log(`${label("Executed scenarios:")} ${result.runs.length}`);
   console.log(`${label("Concurrency:")} ${result.execution.concurrency}`);
   console.log(`${label("Estimated cost:")} ${result.execution.estimatedCost.toFixed(2)}`);
   if (result.execution.skipped.length) {
-    const counts = Object.groupBy(result.execution.skipped, (item) => item.reason);
-    console.log(`Budget/stopped scenarios: ${result.execution.skipped.length} (${Object.entries(counts).map(([reason, items]) => `${reason}=${items?.length ?? 0}`).join(", ")})`);
+    console.log(`Budget/stopped scenarios: ${result.execution.skipped.length} (${Object.entries(outcome.skipped).map(([reason, count]) => `${reason}=${count}`).join(", ")})`);
   }
 
-  if (!result.firstFailure) {
-    const reports = await writeReports(config, result);
-    console.log(`${pass("CloudFault PASS")} — ${paint("bold", config.name ?? modulePath)}`);
+  if (!suite.failure) {
+    const verdict = outcome.status === "incomplete" ? warn("CloudFault INCOMPLETE") : pass("CloudFault PASS");
+    console.log(`${verdict} — ${paint("bold", suite.name)}`);
     if (result.baseline) console.log(renderChecks(result.baseline.checks, { color }));
-    if (reports.coverage) console.log(`Dependency coverage: ${reports.coverage.exercised}/${reports.coverage.discovered} (${(reports.coverage.ratio * 100).toFixed(1)}%)`);
+    if (suite.reports.coverage) console.log(`Dependency coverage: ${suite.reports.coverage.exercised}/${suite.reports.coverage.discovered} (${(suite.reports.coverage.ratio * 100).toFixed(1)}%)`);
+    if (outcome.status === "incomplete" && flags.strict) process.exitCode = 2;
     return;
   }
 
-  const artifact = createFailureArtifact({
-    testName: config.name ?? modulePath,
-    run: result.firstFailure,
-    minimalFailureSet: result.minimalFailureSet,
-    replay: config.replay ?? { module: modulePath, exportName: "runScenario", testName: config.name },
-    environment: { node: process.version, platform: process.platform, arch: process.arch },
-    metadata: {
-      searchStrategy: plan.strategy,
-      plannedScenarios: plan.scenarios.length,
-      executedScenarios: result.runs.length,
-      skippedScenarios: result.execution.skipped.length,
-      estimatedCost: result.execution.estimatedCost,
-      concurrency: result.execution.concurrency,
-      minimizationAttempts: result.minimizationAttempts,
-    },
-  });
-  const failureDirectory = path.resolve(config.failureDirectory ?? ".cloudfault/failures");
-  fs.mkdirSync(failureDirectory, { recursive: true });
-  const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const artifactPath = path.join(failureDirectory, `${stamp}-${safeFilePart(artifact.testName)}.json`);
-  fs.writeFileSync(artifactPath, `${JSON.stringify(artifact, null, 2)}\n`);
-  const reports = await writeReports(config, result, artifact);
-  console.log(renderFailureArtifact(artifact, { color }));
-  console.log(`\n${label("Failure artifact:")} ${filePath(displayPath(artifactPath))}`);
-  console.log(`${label("HTML report:")} ${filePath(displayPath(reports.paths.html))}`);
-  console.log(`${label("Replay:")} ${paint("bold", `cloudfault replay ${displayPath(artifactPath)}`)}`);
+  if (outcome.baselineFailed) console.log(`${fail("Baseline fails")} with no faults injected.`);
+  console.log(renderFailureArtifact(suite.failure.artifact, { color }));
+  console.log(`\n${label("Failure artifact:")} ${filePath(displayPath(suite.failure.artifactPath))}`);
+  if (suite.reports.paths.html) console.log(`${label("HTML report:")} ${filePath(displayPath(suite.reports.paths.html))}`);
+  console.log(`${label("Replay:")} ${paint("bold", `cloudfault replay ${displayPath(suite.failure.artifactPath)}`)}`);
+  console.log(`${label("Pin as a regression:")} ${paint("bold", `cloudfault pin ${displayPath(suite.failure.artifactPath)}`)}`);
   process.exitCode = 1;
 }
 
-async function planModern(modulePath) {
+async function planModern(args) {
   const { defaultScenarioCost } = await core();
-  const config = await loadConfig(modulePath);
+  const { flags, positional } = parseFlags(args);
+  const [modulePath] = positional;
+  const config = await loadConfig(modulePath, configOverrides(flags));
   const faultPoints = await materializeFaultPoints(config);
   const guidanceState = await guidanceForConfig(config);
   const plan = await buildPlan(config, faultPoints, guidanceState);
@@ -222,10 +72,59 @@ async function planModern(modulePath) {
   for (const [index, scenario] of plan.scenarios.entries()) console.log(`${String(index + 1).padStart(4)}  cost=${costs[index].toFixed(2).padStart(6)}  ${scenario.id}`);
 }
 
+async function replayCommand(file) {
+  const { parseFailureArtifact, renderChecks, renderTimeline } = await core();
+  const { replayArtifact } = await import("../lib/regressions.mjs");
+  const absolute = path.resolve(file);
+  const artifact = parseFailureArtifact(fs.readFileSync(absolute, "utf8"));
+  if (!artifact.replay?.module) {
+    console.log(renderTimeline(artifact.history, { color }));
+    throw new Error("Artifact has no replay.module; timeline rendered but execution cannot be repeated");
+  }
+  // Pinned artifacts store their module relative to the corpus directory.
+  const { run, reproduced } = await replayArtifact(artifact, { bases: [process.cwd(), path.dirname(absolute)] });
+  console.log(`${heading("CloudFault replay")} — ${paint("bold", artifact.testName)}\n`);
+  console.log(renderChecks(run.checks, { color }));
+  console.log(`\n${heading("Timeline:")}`);
+  console.log(renderTimeline(run.history, { color }));
+  if (reproduced) {
+    console.log(`\n${fail("REPRODUCED")}`);
+    process.exitCode = 1;
+  } else {
+    console.log(`\n${warn("NOT REPRODUCED")}`);
+    process.exitCode = 2;
+  }
+}
+
+async function pinCommand(args) {
+  const { DEFAULT_REGRESSION_DIRECTORY, pinFailure } = await import("../lib/regressions.mjs");
+  const { flags, positional } = parseFlags(args);
+  if (!positional.length) throw new Error("Usage: cloudfault pin <failure-artifact...> [--regressions-dir dir] [--name name]");
+  for (const file of positional) {
+    const pinned = await pinFailure(file, { directory: flags["regressions-dir"] ?? DEFAULT_REGRESSION_DIRECTORY, name: flags.name });
+    console.log(`${pass(pinned.replaced ? "Re-pinned" : "Pinned")} ${paint("bold", pinned.artifact.testName)} → ${filePath(displayPath(pinned.file))}`);
+  }
+  console.log(`${label("Commit the corpus;")} \`cloudfault ci\` replays it before every search.`);
+}
+
+async function ci(args) {
+  const { ciCommand, EXIT } = await import("../lib/ci.mjs");
+  try {
+    process.exitCode = await ciCommand(args);
+  } catch (error) {
+    const detail = error instanceof Error ? (process.env.CLOUDFAULT_DEBUG ? error.stack : error.message) : error;
+    console.error(`cloudfault ci: ${detail}`);
+    process.exitCode = EXIT.error;
+  }
+}
+
 const [command, ...args] = process.argv.slice(2);
 try {
-  if (command === "run" && args[0]) await runModern(args[0]);
-  else if (command === "plan" && args[0]) await planModern(args[0]);
+  if (command === "ci") await ci(args);
+  else if (command === "run" && args[0]) await runModern(args);
+  else if (command === "plan" && args[0]) await planModern(args);
+  else if (command === "replay" && args[0]) await replayCommand(args[0]);
+  else if (command === "pin") await pinCommand(args);
   else if (command === "evidence") await (await import("../lib/forgegraph.mjs")).evidenceCommand(args, { runDraft });
   else if (command === "fleet") await (await import("../lib/forgegraph.mjs")).fleetCommand(args);
   else await import("./cloudfault-v3.mjs");
