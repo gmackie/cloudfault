@@ -109,6 +109,7 @@ This file tracks the **remaining** work. The original implementation program is 
 - [x] `cloudfault inspect`, `recommend`, `plan`, `run`, `replay`, `timeline`, and `adapters`.
 - [x] CLI semantic registry and semantic-contract export.
 - [x] CLI planning/execution with concurrency, cost/run/time budgets, and persistent guidance.
+- [x] `cloudfault ci`: config discovery, per-run seed/budget overrides, distinct exit codes (fail/incomplete/error), combined JUnit + `summary.json`, GitHub job summary, and a composite action (`action.yml`); documented in `docs/ci.md`.
 
 ## V0.6 — hardening and evidence
 
@@ -167,7 +168,7 @@ This file tracks the **remaining** work. The original implementation program is 
 - [ ] Source/call-graph analysis that proposes business invariant templates from side-effect boundaries.
 - [ ] Agent loop that reasons from provider/Cloudflare evidence, histories, and existing failures rather than generating generic edge cases.
 - [ ] Autoresearch/optimizer interface that can tune workload distributions and search objectives while CloudFault remains the deterministic evaluator.
-- [ ] Historical regression corpus: every discovered production/CI failure can become a pinned minimized scenario.
+- [x] Historical regression corpus: `cloudfault pin` turns a discovered failure into a pinned minimized scenario that `cloudfault ci` replays before every search.
 
 ## Release bar for `1.0`
 

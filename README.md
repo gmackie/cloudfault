@@ -151,6 +151,12 @@ npm run cloudfault -- run ./cloudfault.config.mjs
 # replay a minimized failure
 npm run cloudfault -- replay .cloudfault/failures/<failure>.json
 
+# pin it so every `ci` run replays it as a regression
+npm run cloudfault -- pin .cloudfault/failures/<failure>.json
+
+# CI gate: replay pinned regressions, run every config, write summary/JUnit
+npm run cloudfault -- ci --seed 42 --time-budget 10m --strict
+
 # render a saved history
 npm run cloudfault -- timeline .cloudfault/failures/<failure>.json
 
@@ -163,6 +169,20 @@ npm run cloudfault -- semantics .cloudfault/provider-semantics.json
 npm run cloudfault -- contracts .cloudfault/semantic-contracts.json
 npm run cloudfault -- contract shopify
 ```
+
+## CI
+
+`cloudfault ci` replays the pinned regression corpus (`cloudfault-regressions/`), runs every config, writes `summary.json`, `summary.md`, and a combined `junit.xml`, appends the job summary on GitHub Actions, and exits `0` pass, `1` invariant failure or reproduced regression, `2` incomplete under `--strict`, or `3` config/tool error. The repository is also a composite action:
+
+```yaml
+- uses: gmackie/cloudfault@main   # pin a commit SHA
+  with:
+    seed: ${{ github.run_number }}
+    time-budget: 10m
+    strict: "true"
+```
+
+[docs/ci.md](docs/ci.md) covers the options, outputs, the regression corpus, caching guidance between runs, Forgejo, and ForgeGraph evidence.
 
 ## Generated smoke execute()
 

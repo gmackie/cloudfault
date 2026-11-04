@@ -1,0 +1,101 @@
+name: CloudFault
+description: Replay pinned CloudFault regressions, run fault-injection searches, and gate the job on the result.
+author: gmackie
+branding:
+  icon: zap
+  color: orange
+
+inputs:
+  targets:
+    description: Space-separated config files, directories, or globs. Empty searches the working directory for cloudfault.config.{mjs,js}.
+    default: ""
+  working-directory:
+    description: Directory to run in (the project that depends on @gmacko/cloudfault).
+    default: "."
+  seed:
+    description: Seed every search; printed so a failure can be replayed. Empty keeps each config's own seed.
+    default: ""
+  strict:
+    description: Fail (exit 2) when a budget leaves scenarios unexplored.
+    default: "false"
+  max-scenarios:
+    description: Cap planned scenarios per config.
+    default: ""
+  max-runs:
+    description: Run budget per config.
+    default: ""
+  time-budget:
+    description: Wall-time budget per config, such as 90s, 5m, or 1h.
+    default: ""
+  concurrency:
+    description: Scenarios run in parallel per config.
+    default: ""
+  reports-dir:
+    description: Reports directory, relative to working-directory.
+    default: .cloudfault/reports
+  failures-dir:
+    description: Failure artifact directory, relative to working-directory.
+    default: .cloudfault/failures
+  regressions-dir:
+    description: Pinned regression corpus, relative to working-directory.
+    default: cloudfault-regressions
+  upload-reports:
+    description: Upload reports and failure artifacts as a workflow artifact (also when the gate fails).
+    default: "true"
+  artifact-name:
+    description: Name of the uploaded workflow artifact.
+    default: cloudfault-reports
+
+outputs:
+  exit-code:
+    description: "0 pass, 1 invariant failure or reproduced regression, 2 incomplete under strict, 3 config or tool error."
+    value: ${{ steps.gate.outputs.exit-code }}
+  summary:
+    description: Path to summary.json.
+    value: ${{ steps.gate.outputs.summary }}
+
+runs:
+  using: composite
+  steps:
+    - id: gate
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        CF_TARGETS: ${{ inputs.targets }}
+        CF_SEED: ${{ inputs.seed }}
+        CF_STRICT: ${{ inputs.strict }}
+        CF_MAX_SCENARIOS: ${{ inputs.max-scenarios }}
+        CF_MAX_RUNS: ${{ inputs.max-runs }}
+        CF_TIME_BUDGET: ${{ inputs.time-budget }}
+        CF_CONCURRENCY: ${{ inputs.concurrency }}
+        CF_REPORTS_DIR: ${{ inputs.reports-dir }}
+        CF_FAILURES_DIR: ${{ inputs.failures-dir }}
+        CF_REGRESSIONS_DIR: ${{ inputs.regressions-dir }}
+      run: |
+        args=(ci)
+        read -r -a targets <<< "$CF_TARGETS"
+        args+=("${targets[@]}")
+        [ -n "$CF_SEED" ] && args+=(--seed "$CF_SEED")
+        [ -n "$CF_MAX_SCENARIOS" ] && args+=(--max-scenarios "$CF_MAX_SCENARIOS")
+        [ -n "$CF_MAX_RUNS" ] && args+=(--max-runs "$CF_MAX_RUNS")
+        [ -n "$CF_TIME_BUDGET" ] && args+=(--time-budget "$CF_TIME_BUDGET")
+        [ -n "$CF_CONCURRENCY" ] && args+=(--concurrency "$CF_CONCURRENCY")
+        [ "$CF_STRICT" = "true" ] && args+=(--strict)
+        args+=(--reports-dir "$CF_REPORTS_DIR" --failures-dir "$CF_FAILURES_DIR" --regressions-dir "$CF_REGRESSIONS_DIR")
+        set +e
+        # The project's configs import @gmacko/cloudfault, so use its installed CLI.
+        npx --no-install cloudfault "${args[@]}"
+        code=$?
+        set -e
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "summary=$CF_REPORTS_DIR/summary.json" >> "$GITHUB_OUTPUT"
+        exit "$code"
+
+    - if: always() && inputs.upload-reports == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: |
+          ${{ inputs.working-directory }}/${{ inputs.reports-dir }}
+          ${{ inputs.working-directory }}/${{ inputs.failures-dir }}
+        if-no-files-found: ignore
