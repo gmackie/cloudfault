@@ -39,8 +39,8 @@ jobs:
           echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
           echo "version=$LOCAL_VERSION" >> "$GITHUB_OUTPUT"
 
-  publish:
-    name: Publish
+  package:
+    name: Package
     needs: check-release
     if: needs.check-release.outputs.should_release == 'true'
     runs-on: ubuntu-latest
@@ -53,7 +53,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: "https://registry.npmjs.org"
 
       # npm 10 (bundled with Node 22) crashes resolving the vitest peer set
       # ("Cannot read properties of null (reading 'edgesOut')"). npm 11 resolves
@@ -73,11 +72,36 @@ jobs:
       # Only @gmacko/cloudfault is published. The @cloudfault/* workspace
       # packages are private and are folded into its dist/ by
       # scripts/build-package.mjs, so they never need to exist on npm.
-      # Auth uses an NPM_TOKEN secret rather than npm OIDC trusted publishing,
-      # which is not available on this repo's CI host.
-      - name: Publish @gmacko/cloudfault
+      # Publishing is interactive (npm login + 2FA), not a CI token: npm is
+      # retiring long-lived publish tokens. This job only produces the tested
+      # tarball; see "Releasing" in docs/releasing.md.
+      - name: Pack @gmacko/cloudfault
+        id: pack
         run: |
-          TARBALL=$(npm pack --workspace @gmacko/cloudfault --pack-destination /tmp | tail -1)
-          npm publish "/tmp/$TARBALL" --access public
+          TARBALL=$(npm pack --workspace @gmacko/cloudfault --pack-destination "$RUNNER_TEMP" | tail -1)
+          echo "tarball=$RUNNER_TEMP/$TARBALL" >> "$GITHUB_OUTPUT"
+          shasum "$RUNNER_TEMP/$TARBALL" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload tarball
+        uses: actions/upload-artifact@v4
+        with:
+          name: gmacko-cloudfault-${{ needs.check-release.outputs.version }}
+          path: ${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+
+      - name: Publishing instructions
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          VERSION: ${{ needs.check-release.outputs.version }}
+        run: |
+          {
+            echo "## @gmacko/cloudfault ${VERSION} is ready to publish"
+            echo
+            echo "Download the \`gmacko-cloudfault-${VERSION}\` artifact, then:"
+            echo
+            echo '```'
+            echo "npm login --registry https://registry.npmjs.org/"
+            echo "npm publish gmacko-cloudfault-${VERSION}.tgz --access public --registry https://registry.npmjs.org/"
+            echo '```'
+            echo
+            echo "Then tag the commit \`v${VERSION}\`. See docs/releasing.md."
+          } >> "$GITHUB_STEP_SUMMARY"

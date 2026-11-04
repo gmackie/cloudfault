@@ -128,6 +128,8 @@ npm run pack          # build + npm pack the publishable package
 npm run sync-versions # propagate packages/cloudfault's version everywhere
 ```
 
+Releases are published by hand with npm 2FA; CI only builds, tests, and packs the tarball. See [docs/releasing.md](docs/releasing.md).
+
 The CI suite intentionally includes real runtime fixtures against the currently pinned Wrangler/workerd stack so Cloudflare testing-runtime drift is caught rather than hidden behind unit mocks.
 
 ## CLI
