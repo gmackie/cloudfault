@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseFlags } from "./flags.mjs";
 import { DEFAULT_REGRESSION_DIRECTORY, replayPins } from "./regressions.mjs";
 import { DEFAULT_REPORT_DIRECTORY, configOverrides, displayPath, runSuite } from "./run.mjs";
+import { runStarterSuites } from "./starter.mjs";
 import { fail, filePath, label, pass, paint, warn } from "./terminal.mjs";
 
 const core = () => import("@cloudfault/core");
@@ -85,6 +86,10 @@ function summarizeRecord(record, cwd) {
     name: record.name,
     module: relativeOrUndefined(record.module && path.resolve(cwd, record.module), cwd),
     status: record.status,
+    starter: record.starter || record.status === "not-runnable" || undefined,
+    wrangler: record.wrangler,
+    reason: record.reason,
+    unsupportedScenarios: record.unsupported || undefined,
     seed: record.config?.seed,
     strategy: record.plan?.strategy,
     plannedScenarios: record.plan?.scenarios.length,
@@ -102,12 +107,12 @@ function summarizeRecord(record, cwd) {
 
 export function buildSummary(records, { strict = false, cwd = process.cwd() } = {}) {
   const exitCode = exitCodeFor(records, { strict });
-  const totals = { pass: 0, fail: 0, incomplete: 0, error: 0, resolved: 0, reproduced: 0 };
+  const totals = { pass: 0, fail: 0, incomplete: 0, error: 0, resolved: 0, reproduced: 0, "not-runnable": 0 };
   for (const record of records) totals[record.status] += 1;
   return { schema: "cloudfault.ci", version: 1, status: VERDICT[exitCode], exitCode, strict, totals, results: records.map((record) => summarizeRecord(record, cwd)) };
 }
 
-const ICONS = { pass: "✅", resolved: "✅", fail: "❌", reproduced: "❌", incomplete: "⚠️", error: "💥" };
+const ICONS = { pass: "✅", resolved: "✅", fail: "❌", reproduced: "❌", incomplete: "⚠️", error: "💥", "not-runnable": "⏭️" };
 
 function cell(value) {
   return String(value ?? "").replace(/\|/g, "\\|").replace(/\n/g, " ");
@@ -119,12 +124,14 @@ function code(values) {
 
 function searchDetail(result) {
   if (result.status === "error") return cell(result.error);
+  if (result.status === "not-runnable") return `not runnable: ${cell(result.reason)}`;
   const parts = [];
   if (result.baselineFailed) parts.push("baseline fails with no faults injected");
   else if (result.minimalFailureSet?.length) parts.push(`MFS: ${code(result.minimalFailureSet)}`);
   if (result.failedCheckers?.length) parts.push(`checks: ${code(result.failedCheckers)}`);
   const budgeted = Object.entries(result.skipped ?? {}).filter(([reason]) => reason !== "failure-stop");
   if (budgeted.length) parts.push(`skipped by budget: ${budgeted.map(([reason, count]) => `${reason}=${count}`).join(", ")}`);
+  if (result.unsupportedScenarios) parts.push(`${result.unsupportedScenarios} scenario(s) need in-Worker faults`);
   if (result.artifact) parts.push(`artifact \`${cell(result.artifact)}\``);
   return parts.join(" · ");
 }
@@ -180,6 +187,11 @@ export function combinedJunit(records) {
       suites.push(`<testsuite name="${escapeXml(record.name)}" tests="1" failures="0" errors="1">\n    <testcase name="load-and-run" classname="${escapeXml(record.name)}">\n      <error message="${escapeXml(errorMessage(record.error))}"/>\n    </testcase>\n</testsuite>`);
       continue;
     }
+    if (record.status === "not-runnable") {
+      tests += 1;
+      suites.push(`<testsuite name="${escapeXml(record.name)}" tests="1" failures="0" errors="0" skipped="1">\n    <testcase name="start-worker" classname="${escapeXml(record.name)}">\n      <skipped message="${escapeXml(`not runnable: ${record.reason}`)}"/>\n    </testcase>\n</testsuite>`);
+      continue;
+    }
     const xml = record.reports?.junit;
     if (!xml) continue;
     tests += Number(/tests="(\d+)"/.exec(xml)?.[1] ?? 0);
@@ -216,6 +228,10 @@ function printRecord(record) {
     console.log(`${fail("ERROR")} ${name} — ${errorMessage(record.error)}`);
     return;
   }
+  if (record.status === "not-runnable") {
+    console.log(`${warn("NOT RUNNABLE")} ${name} — ${record.reason}`);
+    return;
+  }
   const verdict = { pass: pass("PASS"), fail: fail("FAIL"), incomplete: warn("INCOMPLETE") }[record.status];
   const counts = `${record.result.runs.length}/${record.plan.scenarios.length} scenarios`;
   const seed = record.config.seed === undefined ? "" : `, seed ${record.config.seed}`;
@@ -225,6 +241,7 @@ function printRecord(record) {
     console.log(`  ${label("minimal failure set:")} ${record.outcome.baselineFailed ? "(baseline — no faults needed)" : ids.join(" + ") || "(unminimized)"}`);
     console.log(`  ${label("artifact:")} ${filePath(displayPath(record.failure.artifactPath))}`);
   }
+  if (record.unsupported) console.log(`  ${label("needs in-Worker faults (not run):")} ${record.unsupported}`);
   if (record.outcome.unexplored) console.log(`  ${label("skipped by budget:")} ${record.outcome.unexplored}`);
 }
 
@@ -254,19 +271,24 @@ Options:
   --regressions-dir <d>  Pinned regression corpus (default ${DEFAULT_REGRESSION_DIRECTORY})
   --no-regressions       Skip replaying the regression corpus
   --strict               Exit 2 when a budget left scenarios unexplored
+  --starter              When no configs are found, run the starter plan
+                         \`cloudfault init\` would generate for every Wrangler
+                         config (no config needed; unstartable Workers are
+                         reported as not-runnable and do not fail)
 
 Exit codes: 0 pass · 1 invariant failure or reproduced regression ·
             2 incomplete (with --strict) · 3 config or tool error`;
 
 export async function ciCommand(args, { cwd = process.cwd() } = {}) {
-  const { flags, positional } = parseFlags(args, { booleans: ["strict", "no-regressions", "help"] });
+  const { flags, positional } = parseFlags(args, { booleans: ["strict", "no-regressions", "starter", "help"] });
   if (flags.help) { console.log(CI_USAGE); return EXIT.pass; }
   const overrides = configOverrides(flags);
   const reportDirectory = path.resolve(cwd, overrides.reportDirectory ?? DEFAULT_REPORT_DIRECTORY);
   overrides.reportDirectory = reportDirectory;
   const strict = flags.strict === true;
   const configs = discoverConfigs(positional, cwd);
-  if (!configs.length) throw new Error(`No CloudFault configs found (looked for cloudfault.config.{mjs,js} under ${positional.length ? positional.join(", ") : displayPath(cwd) || "."})`);
+  const starter = flags.starter === true && !configs.length;
+  if (!configs.length && !starter) throw new Error(`No CloudFault configs found (looked for cloudfault.config.{mjs,js} under ${positional.length ? positional.join(", ") : displayPath(cwd) || "."})`);
 
   const records = [];
   if (!flags["no-regressions"]) {
@@ -284,6 +306,12 @@ export async function ciCommand(args, { cwd = process.cwd() } = {}) {
     }
     printRecord(record);
     records.push(record);
+  }
+  if (starter) {
+    const roots = positional.filter((target) => fs.statSync(path.resolve(cwd, target), { throwIfNoEntry: false })?.isDirectory());
+    const suites = await runStarterSuites(roots, overrides, { cwd, onResult: printRecord });
+    if (!suites.length) throw new Error(`No CloudFault configs or Wrangler configs found under ${roots.length ? roots.join(", ") : "."}`);
+    records.push(...suites);
   }
 
   const summary = buildSummary(records, { strict, cwd });

@@ -146,7 +146,7 @@ function plannerOptions(config) {
   };
 }
 
-function executionOptions(config) {
+export function executionOptions(config) {
   return {
     seed: config.seed,
     stopOnFirstFailure: config.stopOnFirstFailure ?? true,
@@ -185,6 +185,11 @@ async function persistGuidance(guidanceState, result) {
   await guidanceState.store.save(guidanceState.guidance);
 }
 
+/** Plain-data copy of a plan execution, safe to serialize after its harness closed. */
+export function plainResult(raw, plan) {
+  return { ...raw, baseline: plainRun(raw.baseline), runs: raw.runs.map(plainRun), firstFailure: plainRun(raw.firstFailure), plan };
+}
+
 export async function executeConfig(modulePath, overrides = {}) {
   const { executeScenarioPlan } = await core();
   const config = await loadConfig(modulePath, overrides);
@@ -194,8 +199,7 @@ export async function executeConfig(modulePath, overrides = {}) {
   const plan = await buildPlan(config, faultPoints, guidanceState);
   const raw = await executeScenarioPlan(plan, execute, executionOptions(config));
   await persistGuidance(guidanceState, raw);
-  const result = { ...raw, baseline: plainRun(raw.baseline), runs: raw.runs.map(plainRun), firstFailure: plainRun(raw.firstFailure), plan };
-  return { config, plan, result };
+  return { config, plan, result: plainResult(raw, plan) };
 }
 
 /**
@@ -268,7 +272,7 @@ export async function writeFailureArtifact({ config, modulePath, name, plan, res
     testName: name,
     run: outcome.failingRun,
     minimalFailureSet: outcome.minimalFailureSet,
-    replay: config.replay ?? { module: replayModule(modulePath), exportName: "runScenario", testName: config.name },
+    replay: config.replay ?? (modulePath ? { module: replayModule(modulePath), exportName: "runScenario", testName: config.name } : undefined),
     environment: { node: process.version, platform: process.platform, arch: process.arch },
     metadata: {
       searchStrategy: plan.strategy,
@@ -296,9 +300,13 @@ export async function writeFailureArtifact({ config, modulePath, name, plan, res
 export async function runSuite(modulePath, overrides = {}) {
   const started = performance.now();
   const { config, plan, result } = await executeConfig(modulePath, overrides);
-  const name = config.name ?? displayPath(path.resolve(modulePath));
+  return finishSuite({ config, modulePath, name: config.name ?? displayPath(path.resolve(modulePath)), plan, result, started });
+}
+
+/** Outcome, failure artifact, and reports for an executed search. */
+export async function finishSuite({ config, modulePath, name, plan, result, started, extra = {} }) {
   const outcome = await searchOutcome(result);
   const failure = outcome.failingRun ? await writeFailureArtifact({ config, modulePath, name, plan, result, outcome }) : undefined;
   const reports = await writeReports(config, name, result, failure?.artifact);
-  return { kind: "search", name, module: modulePath, config, plan, result, outcome, status: outcome.status, failure, reports, durationMs: performance.now() - started };
+  return { kind: "search", name, module: modulePath, config, plan, result, outcome, status: outcome.status, failure, reports, durationMs: performance.now() - started, ...extra };
 }

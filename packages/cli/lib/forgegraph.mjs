@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
-import { STARTER_BINDING_TYPES, configCrons, generateStarterConfig, inspectRepository, starterFaultPoints } from "./project.mjs";
+import { STARTER_BINDING_TYPES, STARTER_PLAN, configCrons, generateStarterConfig, inspectRepository, starterFaultPoints } from "./project.mjs";
 import { fail, filePath, heading, label, pass, warn } from "./terminal.mjs";
 import { parseFlags } from "./flags.mjs";
 
@@ -13,8 +13,7 @@ const core = () => import("@cloudfault/core");
 const cloudflare = () => import("@cloudfault/cloudflare");
 const smokeModule = () => import("@cloudfault/cloudflare/smoke");
 
-// The same search shape the generated starter config declares.
-const BASELINE_PLAN = { strategy: "hybrid", maxDepth: 2, maxScenarios: 100 };
+const BASELINE_PLAN = STARTER_PLAN;
 const NOT_EXECUTED = "not executed (pass --execute to run the smoke workload)";
 
 function list(value) {

@@ -169,6 +169,9 @@ const STARTER_FAULTS = {
   images: [["imagesTransformError"], ["imagesUnavailable"]],
 };
 export const STARTER_BINDING_TYPES = Object.keys(STARTER_FAULTS);
+
+// The search shape the generated starter config declares (and `ci --starter` runs).
+export const STARTER_PLAN = { strategy: "hybrid", maxDepth: 2, maxScenarios: 100 };
 const STARTER_IMPORTS = [...new Set(Object.values(STARTER_FAULTS).flat().map(([name]) => name))];
 
 function literal(value) {

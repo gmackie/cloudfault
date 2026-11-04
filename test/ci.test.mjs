@@ -123,6 +123,7 @@ test("exit codes rank failures over tool errors over strict incompleteness", () 
   assert.equal(exitCodeFor(records("error", "incomplete"), { strict: true }), 3);
   assert.equal(exitCodeFor(records("error", "fail")), 1);
   assert.equal(exitCodeFor(records("reproduced")), 1);
+  assert.equal(exitCodeFor(records("pass", "not-runnable"), { strict: true }), 0, "an unstartable Worker is reported, not failed");
 });
 
 test("summary Markdown and combined JUnit cover searches, errors, and pins", () => {
@@ -134,7 +135,7 @@ test("summary Markdown and combined JUnit cover searches, errors, and pins", () 
   ];
   const summary = buildSummary(records, { strict: true, cwd: "/repo" });
   assert.equal(summary.status, "fail");
-  assert.deepEqual(summary.totals, { pass: 0, fail: 0, incomplete: 1, error: 1, resolved: 0, reproduced: 1 });
+  assert.deepEqual(summary.totals, { pass: 0, fail: 0, incomplete: 1, error: 1, resolved: 0, reproduced: 1, "not-runnable": 0 });
   assert.equal(summary.results[1].module, "ok.mjs");
   const markdown = renderSummaryMarkdown(summary);
   assert.match(markdown, /## CloudFault — FAIL/);
@@ -224,6 +225,10 @@ test("ci exits 3 for config errors and 1 when any search fails", () => {
   assert.match(both.output, /FAIL bug[\s\S]*minimal failure set: A/);
   const empty = cloudfault(root, ["ci", "missing-dir"]);
   assert.equal(empty.status, 3, empty.output);
+  const bare = workspace();
+  const nothing = cloudfault(bare, ["ci", "--starter"]);
+  assert.equal(nothing.status, 3, nothing.output);
+  assert.match(nothing.output, /No CloudFault configs or Wrangler configs found/);
 });
 
 test("pinned failures replay before the search: reproduced fails CI, resolved passes", () => {
@@ -246,7 +251,7 @@ test("pinned failures replay before the search: reproduced fails CI, resolved pa
   const fixed = cloudfault(root, ["ci", "suites"], { CF_FIXED: "1" });
   assert.equal(fixed.status, 0, fixed.output);
   assert.match(fixed.output, /RESOLVED pinned pinnable/);
-  assert.deepEqual(readJson(path.join(root, ".cloudfault/reports/summary.json")).totals, { pass: 1, fail: 0, incomplete: 0, error: 0, resolved: 1, reproduced: 0 });
+  assert.deepEqual(readJson(path.join(root, ".cloudfault/reports/summary.json")).totals, { pass: 1, fail: 0, incomplete: 0, error: 0, resolved: 1, reproduced: 0, "not-runnable": 0 });
 
   // The pin's module path is corpus-relative, so replay works from another directory.
   const elsewhere = cloudfault(os.tmpdir(), ["replay", path.join(root, "cloudfault-regressions", pinFile)]);
